@@ -9,6 +9,9 @@ public class InteractionManager : MonoBehaviour
     public POIPlacementSystem poiSystem;
     public TerrainPainter painter;
     
+    // Referencia al prefab
+    public GameObject flagPrefab;
+    
     private bool yaPuseUnPOI = false;
 
     public void SetToolPOI() => currentTool = ToolMode.POI;
@@ -26,7 +29,7 @@ public class InteractionManager : MonoBehaviour
             {
                 if (!yaPuseUnPOI)
                 {
-                    poiSystem.PlacePOI(hit);
+                    InstanciarBandera(hit);
                     yaPuseUnPOI = true;
                 }
             }
@@ -37,11 +40,24 @@ public class InteractionManager : MonoBehaviour
         }
     }
 
+    private void InstanciarBandera(RaycastHit hit)
+    {
+        Quaternion rotacionPerpendicular = Quaternion.FromToRotation(Vector3.up, hit.normal);
+        GameObject nuevaBandera = Instantiate(flagPrefab, hit.point, rotacionPerpendicular);
+
+        // Acceso al MeshRenderer para cambiar el color
+        MeshRenderer renderer = nuevaBandera.GetComponentInChildren<MeshRenderer>();
+        if (renderer != null)
+        {
+            // Cambiamos el color directamente en el material instanciado
+            // Nota: Si usas URP, usa "_BaseColor". Si usas Standard, usa "_Color"
+            renderer.material.SetColor("_BaseColor", Color.red); 
+        }
+    }
+
     public void ResetEnvironment()
     {
-        // 1. Limpiar todos los POIs
         poiSystem.ClearAllPOIs();
-        // 2. Resetear la textura del terreno
         painter.ResetTexture();
         Debug.Log("Entorno reseteado correctamente.");
     }

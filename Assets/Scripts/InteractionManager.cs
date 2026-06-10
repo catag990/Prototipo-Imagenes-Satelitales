@@ -53,6 +53,7 @@ public class InteractionManager : MonoBehaviour
             // Nota: Si usas URP, usa "_BaseColor". Si usas Standard, usa "_Color"
             renderer.material.SetColor("_BaseColor", Color.red); 
         }
+        poiSystem.RegisterPOI(nuevaBandera);
     }
 
     public void ResetEnvironment()

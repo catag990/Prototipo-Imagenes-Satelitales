@@ -33,14 +33,21 @@ public class POIPlacementSystem : MonoBehaviour
         }
     }
 
-    // Método para ser llamado desde el InteractionManager (Reset/Borrar)
+    // Añade este método para registrar banderas creadas externamente
+    public void RegisterPOI(GameObject newPOI)
+    {
+        // Anclarlo al contenedor si es necesario (opcional)
+        // newPOI.transform.SetParent(this.transform, true);
+        listaDePines.Add(newPOI);
+    }
+
+    // Asegúrate de que tu método de limpiar incluya el .Clear() al final
     public void ClearAllPOIs()
     {
         foreach (GameObject pin in listaDePines)
         {
             if (pin != null) Destroy(pin);
         }
-        listaDePines.Clear();
-        Debug.Log("Todos los POIs han sido eliminados.");
+        listaDePines.Clear(); // CRÍTICO: Vaciar la memoria de la lista
     }
 }

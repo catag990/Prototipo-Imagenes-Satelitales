@@ -840,6 +840,7 @@ GameObject:
   - component: {fileID: 1295300828}
   - component: {fileID: 1295300827}
   - component: {fileID: 1295300829}
+  - component: {fileID: 1295300831}
   - component: {fileID: 1295300830}
   m_Layer: 0
   m_Name: POI_Manager
@@ -921,10 +922,37 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de3e3b39f0901664cafa2a1217b3d04b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::InteractionManager
+  ShowTopMostFoldoutHeaderGroup: 1
   currentTool: 0
   poiSystem: {fileID: 1295300827}
   painter: {fileID: 210658541}
   flagPrefab: {fileID: 2656283015380748523, guid: e1a9f5a10b20c7e4bb94f8f6bbd18604, type: 3}
+  contenedorTerreno: {fileID: 1576273815}
+--- !u!114 &1295300831
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1295300826}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2700035977
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!1 &1548251155
 GameObject:
   m_ObjectHideFlags: 0
@@ -1314,6 +1342,11 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -5892713542887816581, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
+--- !u!4 &1576273815 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
+  m_PrefabInstance: {fileID: 1576273806}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1703568385
 GameObject:
   m_ObjectHideFlags: 0
@@ -1805,6 +1838,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 130329228133997462, guid: 07b143586e176a34abb64bef25d52caf, type: 3}
+      propertyPath: m_RequestedTrackingOriginMode
+      value: 2
+      objectReference: {fileID: 0}
     - target: {fileID: 915279679387990378, guid: 07b143586e176a34abb64bef25d52caf, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 

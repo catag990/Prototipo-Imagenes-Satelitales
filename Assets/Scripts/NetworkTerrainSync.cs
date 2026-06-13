@@ -1,32 +1,27 @@
 using UnityEngine;
 using Unity.Netcode;
 
-/// <summary>
-/// Script quirúrgico para sincronizar Posición, Rotación y Escala del Terreno.
-/// Corregido: Elimina el "Feedback Loop" de red usando estados de agarre explícitos.
-/// </summary>
 public class NetworkTerrainSync : NetworkBehaviour
 {
     private NetworkVariable<Vector3> netPos = new NetworkVariable<Vector3>();
     private NetworkVariable<Quaternion> netRot = new NetworkVariable<Quaternion>();
     private NetworkVariable<Vector3> netScale = new NetworkVariable<Vector3>(Vector3.one);
 
-    // --- NUEVO: Bandera de Control Local ---
     private bool isGrabbedLocally = false;
 
     public override void OnNetworkSpawn()
     {
         if (IsServer)
         {
-            netPos.Value = transform.localPosition;
-            netRot.Value = transform.localRotation;
+            // REFACTOR: Ahora usamos World Space, somos inmunes a bugs de jerarquía
+            netPos.Value = transform.position;
+            netRot.Value = transform.rotation;
             netScale.Value = transform.localScale;
         }
         else
         {
-            // LATE-JOIN: Copia el estado exacto de la red instantáneamente
-            transform.localPosition = netPos.Value;
-            transform.localRotation = netRot.Value;
+            transform.position = netPos.Value;
+            transform.rotation = netRot.Value;
             transform.localScale = netScale.Value;
         }
     }
@@ -35,16 +30,14 @@ public class NetworkTerrainSync : NetworkBehaviour
     {
         if (!IsSpawned) return;
 
-        // 1. Si TÚ tienes agarrado el mapa físicamente, tú dictas la posición a la red
         if (isGrabbedLocally)
         {
-            UpdateTransformServerRpc(transform.localPosition, transform.localRotation, transform.localScale);
+            UpdateTransformServerRpc(transform.position, transform.rotation, transform.localScale);
         }
-        // 2. Si NO lo tienes agarrado, tu mapa se interpola hacia donde diga la red
         else
         {
-            transform.localPosition = Vector3.Lerp(transform.localPosition, netPos.Value, Time.deltaTime * 10f);
-            transform.localRotation = Quaternion.Slerp(transform.localRotation, netRot.Value, Time.deltaTime * 10f);
+            transform.position = Vector3.Lerp(transform.position, netPos.Value, Time.deltaTime * 10f);
+            transform.rotation = Quaternion.Slerp(transform.rotation, netRot.Value, Time.deltaTime * 10f);
             transform.localScale = Vector3.Lerp(transform.localScale, netScale.Value, Time.deltaTime * 10f);
         }
     }
@@ -57,14 +50,16 @@ public class NetworkTerrainSync : NetworkBehaviour
         netScale.Value = scale;
     }
 
-    // --- MÉTODOS PARA EL XR GRAB INTERACTABLE ---
-    public void OnGrabLocally()
+    // NUEVO: Método para que el Manager teletransporte el mapa a la mesa por la red
+    public void ForceSnapToTable(Vector3 worldPos, Quaternion worldRot)
     {
-        isGrabbedLocally = true;
+        if (IsServer)
+        {
+            netPos.Value = worldPos;
+            netRot.Value = worldRot;
+        }
     }
 
-    public void OnReleaseLocally()
-    {
-        isGrabbedLocally = false;
-    }
+    public void OnGrabLocally() => isGrabbedLocally = true;
+    public void OnReleaseLocally() => isGrabbedLocally = false;
 }

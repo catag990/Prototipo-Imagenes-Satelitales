@@ -2,89 +2,78 @@ using UnityEngine;
 using System.Collections.Generic;
 using Unity.Netcode; 
 
-public enum ToolMode { POI, Paint }
-
-// Estructura contenedora para los vectores del POI (Requerida para NetworkList)
-public struct POIData : INetworkSerializable, System.IEquatable<POIData>
-{
-    public Vector3 localPos;
-    public Vector3 localNormal;
-
-    public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
-    {
-        serializer.SerializeValue(ref localPos);
-        serializer.SerializeValue(ref localNormal);
-    }
-
-    public bool Equals(POIData other) => localPos == other.localPos && localNormal == other.localNormal;
-}
+public enum ToolMode { POI, Lasso } 
 
 public class InteractionManager : NetworkBehaviour
 {
     public ToolMode currentTool = ToolMode.POI;
     public POIPlacementSystem poiSystem;
-    public TerrainPainter painter;
+    public LassoTool lassoTool; 
     
     [Header("Prefabs y Entorno")]
     public GameObject flagPrefab;
     public Transform contenedorTerreno; 
     
     private bool yaPuseUnPOI = false;
+    private bool isLassoDrawing = false; 
 
-    // --- LISTAS DE ESTADO PERSISTENTE ---
-    private NetworkList<POIData> historialPOIs;
-    private NetworkList<Vector2> historialPintura;
+    // --- LISTAS UNIFICADAS (SOLO PARA PERSISTENCIA / LATE-JOIN) ---
+    private NetworkList<GeoMarkerData> historialMarcadores;
+    private NetworkList<Vector3> historialPuntosLazo;
 
     void Awake()
     {
-        historialPOIs = new NetworkList<POIData>();
-        historialPintura = new NetworkList<Vector2>();
+        historialMarcadores = new NetworkList<GeoMarkerData>();
+        historialPuntosLazo = new NetworkList<Vector3>();
     }
 
     public override void OnNetworkSpawn()
     {
-        historialPOIs.OnListChanged += OnPOIListChanged;
-        historialPintura.OnListChanged += OnPinturaListChanged;
-
-        // RECUPERACIÓN HISTÓRICA (El Late-Joiner dibuja lo que ya estaba)
-        if (!IsServer)
+        // LATE-JOIN: Cuando alguien entra, las listas ya se descargaron completas.
+        // Reconstruimos todo sin riesgo de IndexOutOfRange.
+        foreach (GeoMarkerData marker in historialMarcadores)
         {
-            foreach (POIData poi in historialPOIs)
+            if (marker.type == MarkerType.POI)
             {
-                ReconstruirPOIEnMundo(poi.localPos, poi.localNormal);
+                ReconstruirPOI(marker);
             }
-            foreach (Vector2 uv in historialPintura)
+            else if (marker.type == MarkerType.Lasso)
             {
-                painter.PaintAt(uv);
+                ReconstruirLazoDesdeHistorial(marker);
             }
         }
     }
 
-    public override void OnNetworkDespawn()
-    {
-        historialPOIs.OnListChanged -= OnPOIListChanged;
-        historialPintura.OnListChanged -= OnPinturaListChanged;
-    }
-
     public void SetToolPOI() => currentTool = ToolMode.POI;
-    public void SetToolPaint() => currentTool = ToolMode.Paint;
+    public void SetToolLasso() => currentTool = ToolMode.Lasso;
 
     public void ProcesarEntrada(RaycastHit hit, bool estaPresionado)
     {
         if (estaPresionado)
         {
-            if (currentTool == ToolMode.Paint)
+            if (currentTool == ToolMode.Lasso)
             {
-                RegistrarPinturaRpc(hit.textureCoord);
+                if (hit.collider != null)
+                {
+                    if (!isLassoDrawing)
+                    {
+                        lassoTool.IniciarLazo(hit.point);
+                        isLassoDrawing = true;
+                    }
+                    else
+                    {
+                        lassoTool.ActualizarLazo(hit.point);
+                    }
+                }
             }
             else if (currentTool == ToolMode.POI)
             {
-                if (!yaPuseUnPOI && contenedorTerreno != null)
+                if (!yaPuseUnPOI && contenedorTerreno != null && hit.collider != null)
                 {
                     Vector3 posicionLocal = contenedorTerreno.InverseTransformPoint(hit.point);
                     Vector3 normalLocal = contenedorTerreno.InverseTransformDirection(hit.normal);
                     
-                    RegistrarPOIRpc(posicionLocal, normalLocal);
+                    RegistrarPOIServerRpc(posicionLocal, normalLocal);
                     yaPuseUnPOI = true;
                 }
             }
@@ -92,73 +81,136 @@ public class InteractionManager : NetworkBehaviour
         else
         {
             yaPuseUnPOI = false; 
+
+            if (isLassoDrawing)
+            {
+                Vector3[] puntosMundo = lassoTool.TerminarLazo();
+                isLassoDrawing = false;
+
+                if (puntosMundo.Length > 1 && contenedorTerreno != null)
+                {
+                    Vector3[] puntosLocales = new Vector3[puntosMundo.Length];
+                    for (int i = 0; i < puntosMundo.Length; i++)
+                    {
+                        puntosLocales[i] = contenedorTerreno.InverseTransformPoint(puntosMundo[i]);
+                    }
+                    RegistrarLazoServerRpc(puntosLocales);
+                }
+            }
         }
     }
 
-    // --- MENSAJERÍA RPC (SINTAXIS MODERNIZADA) ---
+    // --- RED: GUARDAR EN SERVIDOR Y AVISAR A TODOS ---
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-    private void RegistrarPinturaRpc(Vector2 uvCoords)
+    private void RegistrarPOIServerRpc(Vector3 posLocal, Vector3 normLocal)
     {
-        historialPintura.Add(uvCoords);
+        GeoMarkerData nuevoPOI = new GeoMarkerData 
+        { 
+            markerID = (ulong)historialMarcadores.Count,
+            type = MarkerType.POI, 
+            position = posLocal, 
+            normal = normLocal,
+            isVisible = true,
+            color = Color.red
+        };
+        
+        historialMarcadores.Add(nuevoPOI); // Se guarda para los que entren en el futuro
+        DibujarPOIRpc(nuevoPOI);           // Se dibuja AHORA para los que ya están
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-    private void RegistrarPOIRpc(Vector3 posLocal, Vector3 normLocal)
+    private void RegistrarLazoServerRpc(Vector3[] puntosLocales)
     {
-        POIData nuevoPOI = new POIData { localPos = posLocal, localNormal = normLocal };
-        historialPOIs.Add(nuevoPOI);
-    }
-
-    // --- ESCUCHADORES DE RED ---
-
-    private void OnPOIListChanged(NetworkListEvent<POIData> changeEvent)
-    {
-        if (changeEvent.Type == NetworkListEvent<POIData>.EventType.Add)
+        int startIdx = historialPuntosLazo.Count;
+        foreach (Vector3 p in puntosLocales)
         {
-            ReconstruirPOIEnMundo(changeEvent.Value.localPos, changeEvent.Value.localNormal);
+            historialPuntosLazo.Add(p); // Se guardan los puntos para el futuro
         }
+
+        GeoMarkerData nuevoLazo = new GeoMarkerData 
+        { 
+            markerID = (ulong)historialMarcadores.Count,
+            type = MarkerType.Lasso, 
+            lassoStartIndex = startIdx, 
+            lassoPointCount = puntosLocales.Length,
+            isVisible = true,
+            color = Color.yellow
+        };
+        
+        historialMarcadores.Add(nuevoLazo); // Se guarda el metadato para el futuro
+        DibujarLazoRpc(nuevoLazo, puntosLocales); // Se dibuja AHORA pasando el arreglo completo instantáneamente
     }
 
-    private void OnPinturaListChanged(NetworkListEvent<Vector2> changeEvent)
+    // --- RED: DIBUJADO EN TIEMPO REAL (CLIENTES) ---
+
+    [Rpc(SendTo.Everyone)]
+    private void DibujarPOIRpc(GeoMarkerData data)
     {
-        if (changeEvent.Type == NetworkListEvent<Vector2>.EventType.Add)
-        {
-            painter.PaintAt(changeEvent.Value);
-        }
+        ReconstruirPOI(data);
     }
 
-    // --- DIBUJADO LOCAL ---
+    [Rpc(SendTo.Everyone)]
+    private void DibujarLazoRpc(GeoMarkerData data, Vector3[] puntosLocales)
+    {
+        ReconstruirLazo(data, puntosLocales);
+    }
 
-    private void ReconstruirPOIEnMundo(Vector3 posLocal, Vector3 normLocal)
+    // --- RECONSTRUCCIÓN LOCAL (VISUAL) ---
+
+    private void ReconstruirPOI(GeoMarkerData data)
     {
         if (contenedorTerreno == null) return;
 
-        Vector3 posicionMundo = contenedorTerreno.TransformPoint(posLocal);
-        Vector3 normalMundo = contenedorTerreno.TransformDirection(normLocal);
-
-        Quaternion rotacionPerpendicular = Quaternion.FromToRotation(Vector3.up, normalMundo);
-        GameObject nuevaBandera = Instantiate(flagPrefab, posicionMundo, rotacionPerpendicular);
-
+        Vector3 posicionMundo = contenedorTerreno.TransformPoint(data.position);
+        Vector3 normalMundo = contenedorTerreno.TransformDirection(data.normal);
+        Quaternion rotacion = Quaternion.FromToRotation(Vector3.up, normalMundo);
+        
+        GameObject nuevaBandera = Instantiate(flagPrefab, posicionMundo, rotacion);
         nuevaBandera.transform.SetParent(contenedorTerreno, true);
-
+        
         MeshRenderer renderer = nuevaBandera.GetComponentInChildren<MeshRenderer>();
-        if (renderer != null) renderer.material.SetColor("_BaseColor", Color.red); 
+        if (renderer != null) renderer.material.SetColor("_BaseColor", data.color); 
 
         poiSystem.RegisterPOI(nuevaBandera);
     }
 
-    // --- RESETEO GLOBAL ---
-    public void ResetEnvironment()
+    private void ReconstruirLazo(GeoMarkerData data, Vector3[] puntosLocales)
     {
-        SolicitarResetRpc();
+        if (contenedorTerreno == null) return;
+
+        GameObject lineaObj = new GameObject($"Lazo_Network_{data.markerID}");
+        lineaObj.transform.SetParent(contenedorTerreno, false);
+        
+        LineRenderer lr = lineaObj.AddComponent<LineRenderer>();
+        lr.material = lassoTool.materialLinea;
+        lr.startWidth = lassoTool.anchoLinea;
+        lr.endWidth = lassoTool.anchoLinea;
+        lr.useWorldSpace = false;
+        
+        lr.positionCount = puntosLocales.Length;
+        lr.SetPositions(puntosLocales); // SetPositions es hiper-optimizado en Unity
     }
+
+    private void ReconstruirLazoDesdeHistorial(GeoMarkerData data)
+    {
+        // Función exclusiva para extraer los puntos del Flat Buffer cuando un usuario entra tarde
+        Vector3[] puntosExtraidos = new Vector3[data.lassoPointCount];
+        for (int i = 0; i < data.lassoPointCount; i++)
+        {
+            puntosExtraidos[i] = historialPuntosLazo[data.lassoStartIndex + i];
+        }
+        ReconstruirLazo(data, puntosExtraidos);
+    }
+
+    // --- RESETEO ---
+    public void ResetEnvironment() => SolicitarResetRpc();
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     private void SolicitarResetRpc()
     {
-        historialPOIs.Clear();
-        historialPintura.Clear();
+        historialMarcadores.Clear();
+        historialPuntosLazo.Clear();
         ResetRpc();
     }
 
@@ -166,7 +218,9 @@ public class InteractionManager : NetworkBehaviour
     private void ResetRpc()
     {
         poiSystem.ClearAllPOIs();
-        painter.ResetTexture();
-        Debug.Log("Entorno reseteado colaborativamente.");
+        foreach (Transform child in contenedorTerreno)
+        {
+            if (child.name.StartsWith("Lazo_Network_")) Destroy(child.gameObject);
+        }
     }
 }

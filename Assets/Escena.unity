@@ -191,9 +191,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainPainter
   paintColor:
-    serializedVersion: 2
     rgba: 4278190335
   brushSize: 5
+  dynamicTexture: {fileID: 0}
+  pixelsOriginales: []
+  terrainRenderer: {fileID: 0}
+  brushColorsCache: []
+  cachedBrushSize: -1
 --- !u!1 &387358015
 GameObject:
   m_ObjectHideFlags: 0
@@ -844,6 +848,7 @@ GameObject:
   - component: {fileID: 1295300829}
   - component: {fileID: 1295300831}
   - component: {fileID: 1295300830}
+  - component: {fileID: 1295300832}
   m_Layer: 0
   m_Name: POI_Manager
   m_TagString: Untagged
@@ -927,7 +932,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   currentTool: 0
   poiSystem: {fileID: 1295300827}
-  painter: {fileID: 210658541}
+  lassoTool: {fileID: 1295300832}
   flagPrefab: {fileID: 2656283015380748523, guid: e1a9f5a10b20c7e4bb94f8f6bbd18604, type: 3}
   contenedorTerreno: {fileID: 1576273815}
 --- !u!114 &1295300831
@@ -955,6 +960,21 @@ MonoBehaviour:
   AutoObjectParentSync: 1
   SyncOwnerTransformWhenParented: 1
   AllowOwnerToParent: 0
+--- !u!114 &1295300832
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1295300826}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cca312be1c18ea5498ac627ed49dd0af, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LassoTool
+  distanciaMinima: 0.1
+  materialLinea: {fileID: 2100000, guid: 6d96a6da9b34dfc4d8ac119c003a2367, type: 2}
+  anchoLinea: 0.02
 --- !u!1 &1548251155
 GameObject:
   m_ObjectHideFlags: 0
@@ -1960,10 +1980,18 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3441535470632439688, guid: 07b143586e176a34abb64bef25d52caf, type: 3}
+      propertyPath: m_Name
+      value: Btn_Lasso
+      objectReference: {fileID: 0}
     - target: {fileID: 5466889351053739018, guid: 07b143586e176a34abb64bef25d52caf, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
       objectReference: {fileID: 1295300830}
+    - target: {fileID: 5466889351053739018, guid: 07b143586e176a34abb64bef25d52caf, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: SetToolLasso
+      objectReference: {fileID: 0}
     - target: {fileID: 7143209717072377220, guid: 07b143586e176a34abb64bef25d52caf, type: 3}
       propertyPath: m_Name
       value: XR Origin (XR Rig)

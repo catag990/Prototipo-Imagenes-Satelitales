@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// Script encargado de gestionar la entrada del controlador para 
-/// instanciar POIs o activar el modo de pintado, independiente de XRI.
+/// instanciar POIs o activar el modo de pintado, optimizado para VR.
 /// </summary>
 public class TriggerToPOI : MonoBehaviour
 {
@@ -20,28 +20,32 @@ public class TriggerToPOI : MonoBehaviour
     public LayerMask capaTerreno;
 
     [Header("Configuración de Input")]
-    public InputActionProperty triggerAction; // Asigna aquí la acción de 'Activate Value'
+    public InputActionProperty triggerAction;
+
+    // --- OPTIMIZACIÓN (Evitar spam en Update) ---
+    private bool wasPressed = false;
 
     void Update()
     {
-        // Leemos el valor analógico del gatillo
         float triggerValue = triggerAction.action != null ? triggerAction.action.ReadValue<float>() : 0f;
         bool isPressed = triggerValue > 0.5f;
 
-        // Validamos que tengamos un origen desde donde disparar
-        if (rayOrigin != null)
+        // REFACTOR: Solo ejecutamos el Raycast físico si el gatillo está intencionalmente presionado.
+        // Esto ahorra 90 cálculos de colisión por segundo cuando el usuario está inactivo.
+        if (isPressed)
         {
-            // Lanzamos nuestro propio rayo físico hacia adelante
-            if (Physics.Raycast(rayOrigin.position, rayOrigin.forward, out RaycastHit hit, distanciaRayo, capaTerreno))
+            if (rayOrigin != null && Physics.Raycast(rayOrigin.position, rayOrigin.forward, out RaycastHit hit, distanciaRayo, capaTerreno))
             {
-                // Si golpea el terreno, enviamos los datos al Manager
-                interactionManager.ProcesarEntrada(hit, isPressed);
-            }
-            else
-            {
-                // Si está apuntando al cielo o a la UI, no hay interacción con el terreno
-                interactionManager.ProcesarEntrada(new RaycastHit(), false);
+                interactionManager.ProcesarEntrada(hit, true);
             }
         }
+        // REFACTOR: Si se soltó el gatillo en este frame, enviamos la señal de "falso" UNA SOLA VEZ.
+        else if (wasPressed)
+        {
+            interactionManager.ProcesarEntrada(new RaycastHit(), false);
+        }
+
+        // Guardamos el estado para compararlo en el siguiente frame
+        wasPressed = isPressed; 
     }
 }

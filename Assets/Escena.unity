@@ -190,7 +190,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6cc1ca7c0f34c0a4093f3350a8a32ff8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainPainter
-  paintColor: {r: 1, g: 0, b: 0, a: 1}
+  paintColor:
+    serializedVersion: 2
+    rgba: 4278190335
   brushSize: 5
 --- !u!1 &387358015
 GameObject:
@@ -1109,6 +1111,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1576273814}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1576273817}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1576273818}
     - targetCorrespondingSourceObject: {fileID: 3498419390634274733, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
       insertIndex: -1
       addedObject: {fileID: 210658541}
@@ -1188,10 +1196,34 @@ MonoBehaviour:
       m_Calls: []
   m_SelectEntered:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1576273818}
+        m_TargetAssemblyTypeName: NetworkTerrainSync, Assembly-CSharp
+        m_MethodName: OnGrabLocally
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   m_SelectExited:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1576273818}
+        m_TargetAssemblyTypeName: NetworkTerrainSync, Assembly-CSharp
+        m_MethodName: OnReleaseLocally
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   m_FirstFocusEntered:
     m_PersistentCalls:
       m_Calls: []
@@ -1347,6 +1379,44 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 73cb22c6842f0f742b45f21b3c89bc74, type: 3}
   m_PrefabInstance: {fileID: 1576273806}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1576273817
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1576273807}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2414997622
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &1576273818
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1576273807}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 781e394429ba8c3458fb86d339e96aba, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkTerrainSync
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1 &1703568385
 GameObject:
   m_ObjectHideFlags: 0

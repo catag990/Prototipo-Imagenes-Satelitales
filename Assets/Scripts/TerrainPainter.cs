@@ -2,40 +2,44 @@ using UnityEngine;
 
 public class TerrainPainter : MonoBehaviour
 {
-    public Color paintColor = Color.red;
+    // REFACTOR: Cambiado a Color32. Usa 4 bytes en lugar de 16.
+    public Color32 paintColor = new Color32(255, 0, 0, 255);
     [Range(1, 20)] public int brushSize = 5;
 
     private Texture2D dynamicTexture;
-    private Color[] pixelsOriginales;
+    private Color32[] pixelsOriginales; // REFACTOR: Arreglo Color32
     private Renderer terrainRenderer;
 
     // --- VARIABLES DE OPTIMIZACIÓN ---
-    private Color[] brushColorsCache;
+    private Color32[] brushColorsCache; // REFACTOR: Arreglo Color32
     private int cachedBrushSize = -1;
 
     void Start()
     {
-        terrainRenderer = GetComponent<Renderer>() ?? GetComponentInChildren<Renderer>();
-        if (terrainRenderer != null)
+        terrainRenderer = GetComponent<Renderer>();
+        // Añadida validación de material para evitar NullReferenceExceptions
+        if (terrainRenderer != null && terrainRenderer.material.mainTexture != null)
         {
             Texture2D originalTex = (Texture2D)terrainRenderer.material.mainTexture;
-            pixelsOriginales = originalTex.GetPixels(); // Guardamos el estado inicial
+            
+            // REFACTOR: GetPixels32 es abismalmente más rápido y ligero que GetPixels
+            pixelsOriginales = originalTex.GetPixels32(); 
 
-            dynamicTexture = new Texture2D(originalTex.width, originalTex.height);
-            dynamicTexture.SetPixels(pixelsOriginales);
-            dynamicTexture.Apply();
+            // REFACTOR: Forzamos formato RGBA32 y el 'false' final deshabilita la creación de MipMaps dinámicos
+            dynamicTexture = new Texture2D(originalTex.width, originalTex.height, TextureFormat.RGBA32, false);
+            dynamicTexture.SetPixels32(pixelsOriginales);
+            dynamicTexture.Apply(false); // REFACTOR: Apply(false) evita recalcular MipMaps
+            
             terrainRenderer.material.mainTexture = dynamicTexture;
             
-            // Inicializamos la caché del pincel
             ActualizarCachePincel();
         }
     }
 
-    // Precalcula el bloque de color UNA SOLA VEZ, ahorrando miles de ciclos de CPU
     private void ActualizarCachePincel()
     {
         int anchoBloque = (brushSize * 2) + 1;
-        brushColorsCache = new Color[anchoBloque * anchoBloque];
+        brushColorsCache = new Color32[anchoBloque * anchoBloque];
         for (int i = 0; i < brushColorsCache.Length; i++)
         {
             brushColorsCache[i] = paintColor;
@@ -47,7 +51,6 @@ public class TerrainPainter : MonoBehaviour
     {
         if (dynamicTexture == null) return;
 
-        // Si cambiaste el tamaño del pincel en el Inspector, se actualiza la caché
         if (brushSize != cachedBrushSize) ActualizarCachePincel();
 
         int x = (int)(textureCoord.x * dynamicTexture.width);
@@ -57,22 +60,19 @@ public class TerrainPainter : MonoBehaviour
         int inicioX = x - brushSize;
         int inicioY = y - brushSize;
 
-        // Validamos si el pincel está tocando el borde exacto de la imagen
         bool tocaBorde = inicioX < 0 || inicioY < 0 || 
                          inicioX + anchoBloque >= dynamicTexture.width || 
                          inicioY + anchoBloque >= dynamicTexture.height;
 
         if (tocaBorde)
         {
-            // MÉTODO LENTO (Fallback): Solo se usa en el 1% del mapa (los bordes) 
-            // para evitar errores de salida de índice (Out of Bounds).
             PintarBordeSeguro(x, y);
         }
         else
         {
-            // MÉTODO HIPER-OPTIMIZADO: Estampa el bloque entero de memoria de un solo golpe.
-            dynamicTexture.SetPixels(inicioX, inicioY, anchoBloque, anchoBloque, brushColorsCache);
-            dynamicTexture.Apply();
+            // REFACTOR: Usamos SetPixels32
+            dynamicTexture.SetPixels32(inicioX, inicioY, anchoBloque, anchoBloque, brushColorsCache);
+            dynamicTexture.Apply(false); // CRÍTICO: false para evitar caída de frames en VR
         }
     }
 
@@ -87,16 +87,15 @@ public class TerrainPainter : MonoBehaviour
                 dynamicTexture.SetPixel(px, py, paintColor);
             }
         }
-        dynamicTexture.Apply();
+        dynamicTexture.Apply(false); // CRÍTICO: false
     }
 
     public void ResetTexture()
     {
         if (dynamicTexture != null && pixelsOriginales != null)
         {
-            // SetPixels es instantáneo comparado con un ciclo for
-            dynamicTexture.SetPixels(pixelsOriginales);
-            dynamicTexture.Apply();
+            dynamicTexture.SetPixels32(pixelsOriginales);
+            dynamicTexture.Apply(false); // CRÍTICO: false
         }
     }
 }

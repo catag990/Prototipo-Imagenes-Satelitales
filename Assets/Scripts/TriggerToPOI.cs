@@ -16,8 +16,12 @@ public class TriggerToPOI : MonoBehaviour
     [Header("Configuración del Rayo")]
     public float distanciaRayo = 100f;
     
-    [Tooltip("Selecciona aquí SOLO la capa de tu terreno para evitar colisiones con la UI")]
+    [Tooltip("Selecciona aquí SOLO la capa de tu terreno")]
     public LayerMask capaTerreno;
+
+    // ---> NUEVA VARIABLE FÍSICA PARA BLOQUEAR LA UI <---
+    [Tooltip("Selecciona aquí la capa de tus menús (usualmente 'UI')")]
+    public LayerMask capaUI;
 
     [Header("Configuración de Input")]
     public InputActionProperty triggerAction;
@@ -30,17 +34,31 @@ public class TriggerToPOI : MonoBehaviour
         float triggerValue = triggerAction.action != null ? triggerAction.action.ReadValue<float>() : 0f;
         bool isPressed = triggerValue > 0.5f;
 
-        // REFACTOR: Solo ejecutamos el Raycast físico si el gatillo está intencionalmente presionado.
-        // Esto ahorra 90 cálculos de colisión por segundo cuando el usuario está inactivo.
         if (isPressed)
         {
-            if (rayOrigin != null && Physics.Raycast(rayOrigin.position, rayOrigin.forward, out RaycastHit hit, distanciaRayo, capaTerreno))
+            // Unimos la capa del terreno y la de la UI para que el rayo pueda chocar con ambas
+            LayerMask capaTerrenoYUI = capaTerreno | capaUI;
+
+            // Disparamos un único rayo. Nos dirá qué fue lo primero que impactó.
+            if (rayOrigin != null && Physics.Raycast(rayOrigin.position, rayOrigin.forward, out RaycastHit hit, distanciaRayo, capaTerrenoYUI))
             {
-                interactionManager.ProcesarEntrada(hit, true);
+                // ¿Lo que golpeamos pertenece a la capa UI (el BoxCollider del Canvas)?
+                if (((1 << hit.collider.gameObject.layer) & capaUI) != 0)
+                {
+                    // Golpeamos el menú. Simulamos que el gatillo no está presionado para proteger el terreno.
+                    isPressed = false; 
+                }
+                else
+                {
+                    // Golpeamos el terreno de forma segura
+                    interactionManager.ProcesarEntrada(hit, true);
+                }
             }
         }
-        // REFACTOR: Si se soltó el gatillo en este frame, enviamos la señal de "falso" UNA SOLA VEZ.
-        else if (wasPressed)
+        
+        // REFACTOR: Si se soltó el gatillo en este frame (o si pasamos de apuntar al terreno a la UI),
+        // enviamos la señal de "falso" UNA SOLA VEZ para cortar la línea.
+        if (!isPressed && wasPressed)
         {
             interactionManager.ProcesarEntrada(new RaycastHit(), false);
         }

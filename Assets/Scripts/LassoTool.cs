@@ -53,4 +53,17 @@ public class LassoTool : MonoBehaviour
         }
         return puntosLazo.ToArray(); // Devolvemos el paquete compacto
     }
+    public void CancelarLazo()
+    {
+        isDrawing = false;
+
+        puntosLazo.Clear();
+
+        if (currentLine != null)
+        {
+            Destroy(currentLine.gameObject);
+            currentLine = null;
+        }
+    }
 }
+

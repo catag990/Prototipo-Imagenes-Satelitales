@@ -9,6 +9,7 @@ public class InteractionManager : NetworkBehaviour
     public ToolMode currentTool = ToolMode.POI;
     public POIPlacementSystem poiSystem;
     public LassoTool lassoTool; 
+    public NetworkTerrainSync terrainSync;
     
     [Header("Prefabs y Entorno")]
     public GameObject flagPrefab;
@@ -33,71 +34,219 @@ public class InteractionManager : NetworkBehaviour
         historialPuntosLazo = new NetworkList<Vector3>();
     }
 
+    private void OnTerrainManipulationChanged(bool estaManipulando)
+    {
+        if (!estaManipulando)
+            return;
+
+        CancelarInteraccionDeMarcado();
+    }
+
+    private void CancelarInteraccionDeMarcado()
+    {
+        yaPuseUnPOI = false;
+
+        if (isLassoDrawing)
+        {
+            lassoTool.CancelarLazo();
+            isLassoDrawing = false;
+        }
+    }
     public override void OnNetworkSpawn()
     {
+        if (terrainSync != null)
+        {
+            terrainSync.OnTerrainManipulationStateChanged +=
+                OnTerrainManipulationChanged;
+        }
+
         foreach (GeoMarkerData marker in historialMarcadores)
         {
-            if (marker.type == MarkerType.POI) ReconstruirPOI(marker);
-            else if (marker.type == MarkerType.Lasso) ReconstruirLazoDesdeHistorial(marker);
+            if (marker.type == MarkerType.POI)
+            {
+                ReconstruirPOI(marker);
+            }
+            else if (marker.type == MarkerType.Lasso)
+            {
+                ReconstruirLazoDesdeHistorial(marker);
+            }
+        }
+    }
+    public override void OnNetworkDespawn()
+    {
+        if (terrainSync != null)
+        {
+            terrainSync.OnTerrainManipulationStateChanged -=
+                OnTerrainManipulationChanged;
         }
     }
 
     public void SetToolPOI() => currentTool = ToolMode.POI;
     public void SetToolLasso() => currentTool = ToolMode.Lasso;
 
-    public void ProcesarEntrada(RaycastHit hit, bool estaPresionado)
+    public void ProcesarEntrada(
+        RaycastHit hit,
+        bool estaPresionado)
     {
+        // Bloqueo inmediato mientras cualquier usuario
+        // esté manipulando el terreno.
+        if (terrainSync != null &&
+            terrainSync.IsTerrainBeingManipulated)
+        {
+            CancelarInteraccionDeMarcado();
+            return;
+        }
+
+        // ---------------------------------------------
+        // Código existente
+        // ---------------------------------------------
+
         if (estaPresionado)
         {
-            if (currentTool == ToolMode.Lasso && hit.collider != null)
+            if (
+                currentTool == ToolMode.Lasso &&
+                hit.collider != null)
             {
-                if (!isLassoDrawing) { lassoTool.IniciarLazo(hit.point); isLassoDrawing = true; }
-                else { lassoTool.ActualizarLazo(hit.point); }
+                if (!isLassoDrawing)
+                {
+                    lassoTool.IniciarLazo(hit.point);
+                    isLassoDrawing = true;
+                }
+                else
+                {
+                    lassoTool.ActualizarLazo(hit.point);
+                }
             }
-            else if (currentTool == ToolMode.POI && !yaPuseUnPOI && contenedorTerreno != null && hit.collider != null)
+            else if (
+                currentTool == ToolMode.POI &&
+                !yaPuseUnPOI &&
+                contenedorTerreno != null &&
+                hit.collider != null)
             {
-                Vector3 posicionLocal = contenedorTerreno.InverseTransformPoint(hit.point);
-                Vector3 normalLocal = contenedorTerreno.InverseTransformDirection(hit.normal);
-                RegistrarPOIServerRpc(posicionLocal, normalLocal);
+                Vector3 posicionLocal =
+                    contenedorTerreno
+                        .InverseTransformPoint(hit.point);
+
+                Vector3 normalLocal =
+                    contenedorTerreno
+                        .InverseTransformDirection(hit.normal);
+
+                RegistrarPOIServerRpc(
+                    posicionLocal,
+                    normalLocal);
+
                 yaPuseUnPOI = true;
             }
         }
         else
         {
-            yaPuseUnPOI = false; 
+            yaPuseUnPOI = false;
+
             if (isLassoDrawing)
             {
-                Vector3[] puntosMundo = lassoTool.TerminarLazo();
+                Vector3[] puntosMundo =
+                    lassoTool.TerminarLazo();
+
                 isLassoDrawing = false;
 
-                if (puntosMundo.Length > 1 && contenedorTerreno != null)
+                if (
+                    puntosMundo.Length > 1 &&
+                    contenedorTerreno != null)
                 {
-                    Vector3[] puntosLocales = new Vector3[puntosMundo.Length];
-                    for (int i = 0; i < puntosMundo.Length; i++) puntosLocales[i] = contenedorTerreno.InverseTransformPoint(puntosMundo[i]);
-                    RegistrarLazoServerRpc(puntosLocales);
+                    Vector3[] puntosLocales =
+                        new Vector3[puntosMundo.Length];
+
+                    for (int i = 0;
+                        i < puntosMundo.Length;
+                        i++)
+                    {
+                        puntosLocales[i] =
+                            contenedorTerreno
+                                .InverseTransformPoint(
+                                    puntosMundo[i]);
+                    }
+
+                    RegistrarLazoServerRpc(
+                        puntosLocales);
                 }
             }
         }
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-    private void RegistrarPOIServerRpc(Vector3 posLocal, Vector3 normLocal)
+    private void RegistrarPOIServerRpc(
+        Vector3 posLocal,
+        Vector3 normLocal)
     {
-        GeoMarkerData nuevoPOI = new GeoMarkerData { markerID = (ulong)historialMarcadores.Count, type = MarkerType.POI, position = posLocal, normal = normLocal, isVisible = true, color = Color.white, tag = MarkerTag.Generico };
-        historialMarcadores.Add(nuevoPOI); 
-        DibujarPOIRpc(nuevoPOI);           
+        // VALIDACIÓN AUTORITATIVA
+        if (terrainSync != null &&
+            terrainSync.IsTerrainLockedByNetwork)
+        {
+            return;
+        }
+
+        GeoMarkerData nuevoPOI =
+            new GeoMarkerData
+            {
+                markerID =
+                    (ulong)historialMarcadores.Count,
+
+                type = MarkerType.POI,
+                position = posLocal,
+                normal = normLocal,
+                isVisible = true,
+                color = Color.white,
+                tag = MarkerTag.Generico
+            };
+
+        historialMarcadores.Add(nuevoPOI);
+
+        DibujarPOIRpc(nuevoPOI);
     }
 
+
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-    private void RegistrarLazoServerRpc(Vector3[] puntosLocales)
+    private void RegistrarLazoServerRpc(
+        Vector3[] puntosLocales)
     {
-        int startIdx = historialPuntosLazo.Count;
-        foreach (Vector3 p in puntosLocales) historialPuntosLazo.Add(p); 
-        
-        GeoMarkerData nuevoLazo = new GeoMarkerData { markerID = (ulong)historialMarcadores.Count, type = MarkerType.Lasso, lassoStartIndex = startIdx, lassoPointCount = puntosLocales.Length, isVisible = true, color = Color.white, tag = MarkerTag.Generico };
-        historialMarcadores.Add(nuevoLazo); 
-        DibujarLazoRpc(nuevoLazo, puntosLocales); 
+        // VALIDACIÓN AUTORITATIVA
+        if (terrainSync != null &&
+            terrainSync.IsTerrainLockedByNetwork)
+        {
+            return;
+        }
+
+        int startIdx =
+            historialPuntosLazo.Count;
+
+        foreach (Vector3 p in puntosLocales)
+        {
+            historialPuntosLazo.Add(p);
+        }
+
+        GeoMarkerData nuevoLazo =
+            new GeoMarkerData
+            {
+                markerID =
+                    (ulong)historialMarcadores.Count,
+
+                type = MarkerType.Lasso,
+                lassoStartIndex = startIdx,
+                lassoPointCount =
+                    puntosLocales.Length,
+
+                isVisible = true,
+                color = Color.white,
+                tag = MarkerTag.Generico
+            };
+
+        historialMarcadores.Add(nuevoLazo);
+
+        DibujarLazoRpc(
+            nuevoLazo,
+            puntosLocales);
     }
+
 
     [Rpc(SendTo.Everyone)]
     private void DibujarPOIRpc(GeoMarkerData data) => ReconstruirPOI(data);

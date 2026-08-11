@@ -2135,6 +2135,7 @@ MonoBehaviour:
   currentTool: 0
   poiSystem: {fileID: 1295300827}
   lassoTool: {fileID: 1295300832}
+  terrainSync: {fileID: 0}
   flagPrefab: {fileID: 2656283015380748523, guid: e1a9f5a10b20c7e4bb94f8f6bbd18604, type: 3}
   contenedorTerreno: {fileID: 1576273815}
 --- !u!114 &1295300831
@@ -3243,9 +3244,9 @@ MonoBehaviour:
   m_ParentInteractableObject: {fileID: 0}
   m_AttachTransform: {fileID: 0}
   m_SecondaryAttachTransform: {fileID: 0}
-  m_UseDynamicAttach: 0
+  m_UseDynamicAttach: 1
   m_MatchAttachPosition: 1
-  m_MatchAttachRotation: 1
+  m_MatchAttachRotation: 0
   m_SnapToColliderVolume: 1
   m_ReinitializeDynamicAttachEverySingleGrab: 1
   m_AttachEaseInTime: 0.15

@@ -16,8 +16,12 @@ public class TerrainModeManager : NetworkBehaviour
 
     private Rigidbody rb;
 
-    private NetworkVariable<bool> isRotatoryMode =
-        new NetworkVariable<bool>(false);
+    // false = modo libre
+    // true  = modo mesa fija
+    private NetworkVariable<bool>
+        isRotatoryMode =
+            new NetworkVariable<bool>(
+                false);
 
     // =========================================================
     // ROTACIÓN DESDE EL PUNTO DE AGARRE
@@ -25,57 +29,126 @@ public class TerrainModeManager : NetworkBehaviour
 
     private Transform interactorActivo;
 
-    private bool agarreRotacionActivo = false;
+    private bool agarreRotacionActivo =
+        false;
 
-    // Dirección inicial desde el centro de la mesa hacia
-    // el mando, proyectada sobre el plano horizontal.
+    // Dirección inicial entre el centro de la mesa
+    // y el controlador que realizó el agarre.
     private Vector3 direccionInicial;
 
-    // Rotación Y que tenía el terreno al comenzar el agarre.
+    // Rotación que tenía el terreno al comenzar.
     private float rotacionInicialY;
 
-    // Posición fija de la mesa durante el agarre.
+    // Posición central fija de la mesa.
     private Vector3 posicionMesaFija;
+
+    // =========================================================
+    // AWAKE
+    // =========================================================
 
     void Awake()
     {
-        rb = terrenoInteractable.GetComponent<Rigidbody>();
+        if (terrenoInteractable == null)
+        {
+            Debug.LogError(
+                "[TerrainModeManager] " +
+                "terrenoInteractable no está asignado.");
 
-        // Dynamic Attach evita que el agarre se trate
-        // siempre como si se hubiera realizado desde el centro.
-        terrenoInteractable.useDynamicAttach = true;
-        terrenoInteractable.matchAttachPosition = true;
-        terrenoInteractable.matchAttachRotation = false;
+            return;
+        }
+
+        rb =
+            terrenoInteractable
+                .GetComponent<Rigidbody>();
+
+        if (terrainSync == null)
+        {
+            terrainSync =
+                terrenoInteractable
+                    .GetComponent<
+                        NetworkTerrainSync>();
+
+            if (terrainSync == null)
+            {
+                terrainSync =
+                    terrenoInteractable
+                        .GetComponentInParent<
+                            NetworkTerrainSync>();
+            }
+        }
+
+        if (terrainSync == null)
+        {
+            Debug.LogError(
+                "[TerrainModeManager] " +
+                "NetworkTerrainSync no está asignado.");
+        }
+
+        // Mantener el punto donde realmente
+        // se tomó el terreno.
+        terrenoInteractable.useDynamicAttach =
+            true;
+
+        terrenoInteractable.matchAttachPosition =
+            true;
+
+        terrenoInteractable.matchAttachRotation =
+            false;
     }
+
+    // =========================================================
+    // EVENTOS DE AGARRE
+    // =========================================================
 
     void OnEnable()
     {
-        terrenoInteractable.selectEntered.AddListener(
-            OnGrabStarted);
+        if (terrenoInteractable == null)
+            return;
 
-        terrenoInteractable.selectExited.AddListener(
-            OnGrabEnded);
+        terrenoInteractable
+            .selectEntered
+            .AddListener(
+                OnGrabStarted);
+
+        terrenoInteractable
+            .selectExited
+            .AddListener(
+                OnGrabEnded);
     }
 
     void OnDisable()
     {
-        terrenoInteractable.selectEntered.RemoveListener(
-            OnGrabStarted);
+        if (terrenoInteractable == null)
+            return;
 
-        terrenoInteractable.selectExited.RemoveListener(
-            OnGrabEnded);
+        terrenoInteractable
+            .selectEntered
+            .RemoveListener(
+                OnGrabStarted);
+
+        terrenoInteractable
+            .selectExited
+            .RemoveListener(
+                OnGrabEnded);
     }
+
+    // =========================================================
+    // NETWORK SPAWN
+    // =========================================================
 
     public override void OnNetworkSpawn()
     {
-        isRotatoryMode.OnValueChanged += OnModeChanged;
+        isRotatoryMode.OnValueChanged +=
+            OnModeChanged;
 
-        AplicarModoLocal(isRotatoryMode.Value);
+        AplicarModoLocal(
+            isRotatoryMode.Value);
     }
 
     public override void OnNetworkDespawn()
     {
-        isRotatoryMode.OnValueChanged -= OnModeChanged;
+        isRotatoryMode.OnValueChanged -=
+            OnModeChanged;
     }
 
     // =========================================================
@@ -89,14 +162,16 @@ public class TerrainModeManager : NetworkBehaviour
 
     [Rpc(
         SendTo.Server,
-        InvokePermission = RpcInvokePermission.Everyone)]
+        InvokePermission =
+            RpcInvokePermission.Everyone)]
     private void ToggleModeServerRpc()
     {
         isRotatoryMode.Value =
             !isRotatoryMode.Value;
 
         if (isRotatoryMode.Value &&
-            puntoAnclajeMesa != null)
+            puntoAnclajeMesa != null &&
+            terrainSync != null)
         {
             terrainSync.ForceSnapToTable(
                 puntoAnclajeMesa.position,
@@ -108,43 +183,68 @@ public class TerrainModeManager : NetworkBehaviour
         bool oldMode,
         bool newMode)
     {
-        AplicarModoLocal(newMode);
+        AplicarModoLocal(
+            newMode);
     }
 
-    private void AplicarModoLocal(bool rotatory)
+    private void AplicarModoLocal(
+        bool rotatory)
     {
         if (mesaVisual != null)
-            mesaVisual.SetActive(rotatory);
+        {
+            mesaVisual.SetActive(
+                rotatory);
+        }
 
-        rb.isKinematic = true;
+        if (rb != null)
+        {
+            rb.isKinematic =
+                true;
+        }
+
+        if (terrenoInteractable == null)
+            return;
 
         terrenoInteractable.movementType =
-            XRBaseInteractable.MovementType.Kinematic;
+            XRBaseInteractable
+                .MovementType
+                .Kinematic;
 
         if (rotatory)
         {
-            // MODO MESA
+            // =============================================
+            // MODO MESA FIJA
+            // =============================================
             //
-            // XRGrabInteractable no controlará ni posición
-            // ni rotación directamente.
-            // TerrainModeManager realizará la rotación
-            // horizontal desde el lugar donde fue tomada.
+            // TerrainModeManager controla manualmente
+            // la rotación horizontal.
+            //
+            // El XR Grab Interactable no mueve ni rota
+            // directamente el terreno.
 
-            terrenoInteractable.trackPosition = false;
-            terrenoInteractable.trackRotation = false;
+            terrenoInteractable.trackPosition =
+                false;
+
+            terrenoInteractable.trackRotation =
+                false;
         }
         else
         {
+            // =============================================
             // MODO LIBRE
-            //
-            // El XRGrabInteractable recupera el control
-            // normal de posición y rotación.
+            // =============================================
 
-            terrenoInteractable.trackPosition = true;
-            terrenoInteractable.trackRotation = true;
+            terrenoInteractable.trackPosition =
+                true;
 
-            agarreRotacionActivo = false;
-            interactorActivo = null;
+            terrenoInteractable.trackRotation =
+                true;
+
+            agarreRotacionActivo =
+                false;
+
+            interactorActivo =
+                null;
         }
     }
 
@@ -155,26 +255,47 @@ public class TerrainModeManager : NetworkBehaviour
     private void OnGrabStarted(
         SelectEnterEventArgs args)
     {
+        // -----------------------------------------------------
+        // IMPORTANTE:
+        // Este llamado ocurre SIEMPRE.
+        //
+        // Tanto en modo libre como en modo mesa,
+        // cualquier agarre bloquea POIs y lazos
+        // para TODOS los clientes.
+        // -----------------------------------------------------
+
         if (terrainSync != null)
+        {
             terrainSync.OnGrabLocally();
-        // En modo libre no modificamos el comportamiento
-        // normal del XR Grab Interactable.
+        }
+        else
+        {
+            Debug.LogError(
+                "[TerrainModeManager] " +
+                "No se pudo activar el bloqueo global " +
+                "porque terrainSync es null.");
+        }
+
+        // En modo libre no necesitamos
+        // la lógica manual de rotación.
         if (!isRotatoryMode.Value)
             return;
 
         if (puntoAnclajeMesa == null)
             return;
 
-        // Obtener el Transform que representa el punto
-        // efectivo del mando/interactor.
+        // Obtener el punto efectivo donde el
+        // controlador tomó el terreno.
         Transform attachInteractor =
-            args.interactorObject.GetAttachTransform(
-                terrenoInteractable);
+            args.interactorObject
+                .GetAttachTransform(
+                    terrenoInteractable);
 
         if (attachInteractor == null)
             return;
 
-        interactorActivo = attachInteractor;
+        interactorActivo =
+            attachInteractor;
 
         posicionMesaFija =
             puntoAnclajeMesa.position;
@@ -182,26 +303,29 @@ public class TerrainModeManager : NetworkBehaviour
         rotacionInicialY =
             transform.eulerAngles.y;
 
-        // Vector desde el centro de la mesa hasta
-        // el lugar actual del mando.
+        // Vector horizontal desde el centro de la mesa
+        // al punto de agarre.
         Vector3 direccion =
             interactorActivo.position -
             posicionMesaFija;
 
-        // Ignorar movimiento vertical.
-        direccion.y = 0f;
+        direccion.y =
+            0f;
 
         if (direccion.sqrMagnitude <
             0.0001f)
         {
-            agarreRotacionActivo = false;
+            agarreRotacionActivo =
+                false;
+
             return;
         }
 
         direccionInicial =
             direccion.normalized;
 
-        agarreRotacionActivo = true;
+        agarreRotacionActivo =
+            true;
     }
 
     // =========================================================
@@ -211,18 +335,28 @@ public class TerrainModeManager : NetworkBehaviour
     private void OnGrabEnded(
         SelectExitEventArgs args)
     {
+        // -----------------------------------------------------
+        // IMPORTANTE:
+        // Se libera independientemente de modo libre/fijo.
+        // -----------------------------------------------------
+
         if (terrainSync != null)
+        {
             terrainSync.OnReleaseLocally();
-            
+        }
+
         if (!isRotatoryMode.Value)
             return;
 
-        agarreRotacionActivo = false;
-        interactorActivo = null;
+        agarreRotacionActivo =
+            false;
+
+        interactorActivo =
+            null;
     }
 
     // =========================================================
-    // ROTACIÓN DE LA MESA
+    // ROTACIÓN EN MODO MESA
     // =========================================================
 
     void LateUpdate()
@@ -233,7 +367,7 @@ public class TerrainModeManager : NetworkBehaviour
             return;
         }
 
-        // La mesa permanece en su posición fija.
+        // La mesa conserva su centro fijo.
         transform.position =
             puntoAnclajeMesa.position;
 
@@ -244,15 +378,14 @@ public class TerrainModeManager : NetworkBehaviour
                 interactorActivo.position -
                 posicionMesaFija;
 
-            direccionActual.y = 0f;
+            direccionActual.y =
+                0f;
 
             if (direccionActual.sqrMagnitude >
                 0.0001f)
             {
                 direccionActual.Normalize();
 
-                // Ángulo horizontal recorrido por la mano
-                // desde el lugar donde comenzó el agarre.
                 float deltaY =
                     Vector3.SignedAngle(
                         direccionInicial,
@@ -272,8 +405,7 @@ public class TerrainModeManager : NetworkBehaviour
         }
         else
         {
-            // Aunque no exista agarre, impedir inclinación
-            // accidental en X o Z.
+            // Bloquear inclinación accidental.
             Vector3 eulerTerreno =
                 transform.eulerAngles;
 
@@ -284,18 +416,24 @@ public class TerrainModeManager : NetworkBehaviour
                     0f);
         }
 
-        // La representación visual de la mesa conserva
-        // el mismo giro horizontal del terreno.
+        // Mantener sincronizada visualmente
+        // la base de la mesa.
         if (mesaVisual != null)
         {
             Vector3 eulerMesa =
-                mesaVisual.transform.localEulerAngles;
+                mesaVisual
+                    .transform
+                    .localEulerAngles;
 
-            mesaVisual.transform.localEulerAngles =
-                new Vector3(
-                    eulerMesa.x,
-                    transform.localEulerAngles.y,
-                    eulerMesa.z);
+            mesaVisual
+                .transform
+                .localEulerAngles =
+                    new Vector3(
+                        eulerMesa.x,
+                        transform
+                            .localEulerAngles
+                            .y,
+                        eulerMesa.z);
         }
     }
 }

@@ -192,16 +192,5 @@ public class SarComparisonSlider :
         usuarioInteractuando =
             false;
 
-        if (layerManager != null &&
-            layerManager.IsSarActive)
-        {
-            layerManager.ReturnToSarLocal();
-        }
-
-        if (comparisonSlider != null)
-        {
-            comparisonSlider.SetValueWithoutNotify(
-                1f);
-        }
     }
 }

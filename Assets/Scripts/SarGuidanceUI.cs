@@ -11,8 +11,8 @@ public class SarGuidanceUI : MonoBehaviour
     public GameObject sarLegendPanel;
 
     [Header("Duración")]
-    [Range(5f, 8f)]
-    public float microExplanationDuration = 7f;
+    [Range(5f, 20f)]
+    public float microExplanationDuration = 10f;
 
     [Header("Persistencia")]
     [Tooltip(

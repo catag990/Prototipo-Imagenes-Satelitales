@@ -5,56 +5,220 @@ using TMPro;
 public class MarkerRowUI : MonoBehaviour
 {
     public TextMeshProUGUI nombreTxt;
+
     public Button btnOcultar;
     public Button btnCambiarTag;
-    
+
+    [Header("Eliminación")]
+    public Button btnEliminar;
+
     private GeoMarkerData dataRef;
     private InteractionManager manager;
 
-    public void Setup(GeoMarkerData data, InteractionManager mgr)
+    private bool eliminacionSolicitada =
+        false;
+
+    // =========================================================
+    // SETUP
+    // =========================================================
+
+    public void Setup(
+        GeoMarkerData data,
+        InteractionManager mgr)
     {
-        dataRef = data;
-        manager = mgr;
-        btnOcultar.onClick.AddListener(OnOcultar);
-        btnCambiarTag.onClick.AddListener(OnCambiarTag);
+        dataRef =
+            data;
+
+        manager =
+            mgr;
+
+        if (btnOcultar != null)
+        {
+            btnOcultar.onClick.AddListener(
+                OnOcultar);
+        }
+
+        if (btnCambiarTag != null)
+        {
+            btnCambiarTag.onClick.AddListener(
+                OnCambiarTag);
+        }
+
+        if (btnEliminar != null)
+        {
+            btnEliminar.onClick.AddListener(
+                OnEliminar);
+        }
+
         ActualizarTextos();
     }
 
-    // Nuevo método para recibir datos de la red y actualizarse a sí misma
-    public void ActualizarDesdeRed(GeoMarkerData newData)
+    // =========================================================
+    // ACTUALIZACIÓN DESDE RED
+    // =========================================================
+
+    public void ActualizarDesdeRed(
+        GeoMarkerData newData)
     {
-        dataRef.isVisible = newData.isVisible;
-        dataRef.color = newData.color;
-        dataRef.tag = newData.tag;
+        dataRef.isVisible =
+            newData.isVisible;
+
+        dataRef.color =
+            newData.color;
+
+        dataRef.tag =
+            newData.tag;
+
         ActualizarTextos();
     }
+
+    // =========================================================
+    // VISIBILIDAD
+    // =========================================================
 
     private void OnOcultar()
     {
-        dataRef.isVisible = !dataRef.isVisible;
-        manager.SolicitarCambioMarcador(dataRef.markerID, dataRef.isVisible, dataRef.color, dataRef.tag);
+        if (manager == null ||
+            eliminacionSolicitada)
+        {
+            return;
+        }
+
+        dataRef.isVisible =
+            !dataRef.isVisible;
+
+        manager.SolicitarCambioMarcador(
+            dataRef.markerID,
+            dataRef.isVisible,
+            dataRef.color,
+            dataRef.tag);
     }
+
+    // =========================================================
+    // TAG
+    // =========================================================
 
     private void OnCambiarTag()
     {
-        int nextTag = ((int)dataRef.tag + 1) % 4;
-        dataRef.tag = (MarkerTag)nextTag;
-        switch(dataRef.tag)
+        if (manager == null ||
+            eliminacionSolicitada)
         {
-            case MarkerTag.Generico: dataRef.color = Color.white; break;
-            case MarkerTag.Riesgo:   dataRef.color = Color.red; break;
-            case MarkerTag.Agua:     dataRef.color = Color.blue; break;
-            case MarkerTag.Calor:    dataRef.color = Color.yellow; break;
+            return;
         }
-        manager.SolicitarCambioMarcador(dataRef.markerID, dataRef.isVisible, dataRef.color, dataRef.tag);
+
+        int nextTag =
+            ((int)dataRef.tag + 1) % 4;
+
+        dataRef.tag =
+            (MarkerTag)nextTag;
+
+        switch (dataRef.tag)
+        {
+            case MarkerTag.Generico:
+                dataRef.color =
+                    Color.white;
+                break;
+
+            case MarkerTag.Riesgo:
+                dataRef.color =
+                    Color.red;
+                break;
+
+            case MarkerTag.Agua:
+                dataRef.color =
+                    Color.blue;
+                break;
+
+            case MarkerTag.Alerta:
+                dataRef.color =
+                    Color.yellow;
+                break;
+        }
+
+        manager.SolicitarCambioMarcador(
+            dataRef.markerID,
+            dataRef.isVisible,
+            dataRef.color,
+            dataRef.tag);
     }
+
+    // =========================================================
+    // ELIMINACIÓN
+    // =========================================================
+
+    private void OnEliminar()
+    {
+        if (manager == null ||
+            eliminacionSolicitada)
+        {
+            return;
+        }
+
+        eliminacionSolicitada =
+            true;
+
+        // Evitar que el usuario envíe la solicitud
+        // varias veces antes de recibir el RPC.
+        if (btnEliminar != null)
+        {
+            btnEliminar.interactable =
+                false;
+        }
+
+        if (btnOcultar != null)
+        {
+            btnOcultar.interactable =
+                false;
+        }
+
+        if (btnCambiarTag != null)
+        {
+            btnCambiarTag.interactable =
+                false;
+        }
+
+        manager.SolicitarEliminarMarcador(
+            dataRef.markerID);
+    }
+
+    // =========================================================
+    // TEXTO
+    // =========================================================
 
     private void ActualizarTextos()
     {
-        nombreTxt.text = $"{dataRef.type} [{dataRef.tag}]";
-        nombreTxt.color = dataRef.color;
-        btnOcultar.GetComponentInChildren<TextMeshProUGUI>().text = dataRef.isVisible ? "Ocultar" : "Mostrar";
+        if (nombreTxt != null)
+        {
+            nombreTxt.text =
+                $"{dataRef.type} [{dataRef.tag}]";
+
+            nombreTxt.color =
+                dataRef.color;
+        }
+
+        if (btnOcultar != null)
+        {
+            TextMeshProUGUI textoBoton =
+                btnOcultar
+                    .GetComponentInChildren<
+                        TextMeshProUGUI>();
+
+            if (textoBoton != null)
+            {
+                textoBoton.text =
+                    dataRef.isVisible
+                        ? "Ocultar"
+                        : "Mostrar";
+            }
+        }
     }
 
-    public GeoMarkerData GetData() => dataRef;
+    // =========================================================
+    // ACCESO A DATOS
+    // =========================================================
+
+    public GeoMarkerData GetData()
+    {
+        return dataRef;
+    }
 }

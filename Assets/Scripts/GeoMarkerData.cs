@@ -2,7 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 
 public enum MarkerType { POI, Lasso }
-public enum MarkerTag { Riesgo, Agua, Calor, Generico }
+public enum MarkerTag { Riesgo, Agua, Alerta, Generico }
 
 [System.Serializable]
 public struct GeoMarkerData : INetworkSerializable, System.IEquatable<GeoMarkerData>

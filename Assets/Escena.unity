@@ -299,8 +299,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "Los colores de esta capa no corresponden a colores reales del terreno.\nLa
     imagen combina respuestas radar VV y VH.\n\nMagenta indica un mayor predominio
-    relativo de VV y verde un mayor\npredominio relativo de VH.\n\nCompare temporalmente
-    con la capa \xF3ptica para relacionar estos patrones\ncon el mismo relieve."
+    relativo de VV y verde un mayor predominio relativo de VH.\n\nCompare temporalmente
+    con la capa \xF3ptica para relacionar estos patrones con el mismo relieve."
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -2212,8 +2212,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 705.1081, y: 41.78786, z: 26.514004}
-  m_Center: {x: -228.8821, y: 271.18665, z: 6.6613903}
+  m_Size: {x: 1151.9008, y: 581.99774, z: 26.514004}
+  m_Center: {x: -5.485296, y: 1.0814666, z: 6.6613903}
 --- !u!1 &932289915
 GameObject:
   m_ObjectHideFlags: 0
@@ -3453,7 +3453,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TriggerToPOI
   interactionManager: {fileID: 1295300830}
-  rayOrigin: {fileID: 139913337}
+  origenRayo: {fileID: 139913337}
   distanciaRayo: 100
   capaTerreno:
     serializedVersion: 2
@@ -4681,19 +4681,7 @@ MonoBehaviour:
       m_Calls: []
   m_SelectEntered:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 1576273818}
-        m_TargetAssemblyTypeName: NetworkTerrainSync, Assembly-CSharp
-        m_MethodName: OnGrabLocally
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   m_SelectExited:
     m_PersistentCalls:
       m_Calls:

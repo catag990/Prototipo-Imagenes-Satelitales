@@ -1,65 +1,178 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>
-/// Script encargado de gestionar la entrada del controlador para 
-/// instanciar POIs o activar el modo de pintado, optimizado para VR.
-/// </summary>
 public class TriggerToPOI : MonoBehaviour
 {
+    // =========================================================
+    // REFERENCIAS
+    // =========================================================
+
     [Header("Referencias")]
     public InteractionManager interactionManager;
-    
-    [Tooltip("Objeto desde donde sale el láser")]
-    public Transform rayOrigin;
 
-    [Header("Configuración del Rayo")]
+    [Tooltip("El punto de origen desde donde sale el láser del controlador. Si se deja vacío, usará la posición de este mismo objeto.")]
+    public Transform origenRayo;
+
+    // =========================================================
+    // CONFIGURACIÓN DE RAYO Y CAPAS
+    // =========================================================
+
+    [Header("Configuración del Rayo Nativo")]
     public float distanciaRayo = 100f;
-    
-    [Tooltip("La capa del terreno")]
     public LayerMask capaTerreno;
+    public LayerMask capaUI; // Nueva capa para detectar tus menús físicos
 
-    [Tooltip("Capa de los menús")]
-    public LayerMask capaUI;
+    // =========================================================
+    // INPUT
+    // =========================================================
 
     [Header("Configuración de Input")]
     public InputActionProperty triggerAction;
 
-    private bool wasPressed = false;
+    // =========================================================
+    // ESTADO
+    // =========================================================
 
-    void Update()
+    // Estado físico real del trigger durante el frame anterior.
+    private bool wasPhysicallyPressed = false;
+
+    // Si esta pulsación tocó UI, queda reservada para la UI
+    // hasta soltar físicamente el trigger.
+    private bool uiConsumedThisPress = false;
+
+    // =========================================================
+    // AWAKE
+    // =========================================================
+
+    private void Awake()
     {
-        float triggerValue = triggerAction.action != null ? triggerAction.action.ReadValue<float>() : 0f;
-        bool isPressed = triggerValue > 0.5f;
-
-        if (isPressed)
+        if (origenRayo == null)
         {
-            // Se une la capa del terreno y la de la UI para que el rayo pueda chocar con ambas
-            LayerMask capaTerrenoYUI = capaTerreno | capaUI;
+            // Fallback: Si se te olvida asignarlo, usará el objeto donde pongas el script
+            origenRayo = transform; 
+        }
+    }
 
-            // Se dispara un único rayo. Observa el primero que impactó.
-            if (rayOrigin != null && Physics.Raycast(rayOrigin.position, rayOrigin.forward, out RaycastHit hit, distanciaRayo, capaTerrenoYUI))
+    // =========================================================
+    // UPDATE
+    // =========================================================
+
+    private void Update()
+    {
+        float triggerValue = triggerAction.action != null
+            ? triggerAction.action.ReadValue<float>()
+            : 0f;
+
+        bool isPhysicallyPressed = triggerValue > 0.5f;
+
+        // -----------------------------------------------------
+        // GATILLO FÍSICAMENTE PRESIONADO
+        // -----------------------------------------------------
+        if (isPhysicallyPressed)
+        {
+            ProcesarTriggerPresionado();
+        }
+
+        // -----------------------------------------------------
+        // LIBERACIÓN FÍSICA REAL
+        // -----------------------------------------------------
+        if (!isPhysicallyPressed && wasPhysicallyPressed)
+        {
+            if (interactionManager != null)
             {
-                // Si es capa UI
-                if (((1 << hit.collider.gameObject.layer) & capaUI) != 0)
-                {
-                    // Simulación que el gatillo no está presionado para proteger el terreno.
-                    isPressed = false; 
-                }
-                else
-                {
-                    // Hit al terreno de forma segura
-                    interactionManager.ProcesarEntrada(hit, true);
-                }
+                interactionManager.ProcesarEntrada(default, false);
             }
-        }
-        
-        if (!isPressed && wasPressed)
-        {
-            interactionManager.ProcesarEntrada(new RaycastHit(), false);
+
+            // Finaliza la captura de UI.
+            uiConsumedThisPress = false;
         }
 
-        // Se guarda el estado para compararlo en el siguiente frame
-        wasPressed = isPressed; 
+        wasPhysicallyPressed = isPhysicallyPressed;
+    }
+
+    // =========================================================
+    // PROCESAR PULSACIÓN
+    // =========================================================
+
+    private void ProcesarTriggerPresionado()
+    {
+        if (interactionManager == null || origenRayo == null)
+        {
+            return;
+        }
+
+        // -----------------------------------------------------
+        // LANZAMIENTO DEL RAYO FÍSICO NATIVO
+        // -----------------------------------------------------
+        
+        // Optimización: Solo evaluamos colisiones contra el Terreno y la UI
+        LayerMask mascaraCombinada = capaTerreno | capaUI;
+
+        bool hayImpacto = Physics.Raycast(
+            origenRayo.position, 
+            origenRayo.forward, 
+            out RaycastHit hit, 
+            distanciaRayo,
+            mascaraCombinada
+        );
+
+        if (!hayImpacto)
+        {
+            return;
+        }
+
+        // =====================================================
+        // UI TIENE PRIORIDAD ESPACIAL
+        // =====================================================
+
+        bool hitUI = EsCapaUI(hit.collider.gameObject.layer);
+
+        if (hitUI)
+        {
+            // Solo necesitamos ejecutar la cancelación una vez por pulsación física.
+            if (!uiConsumedThisPress)
+            {
+                interactionManager.CancelarMarcacionPorUI();
+                uiConsumedThisPress = true;
+            }
+
+            // MUY IMPORTANTE: NO llamar ProcesarEntrada(false). 
+            // El usuario no ha soltado el gatillo.
+            return;
+        }
+
+        // =====================================================
+        // ESTA PULSACIÓN YA FUE CAPTURADA POR UI
+        // =====================================================
+
+        // Aunque el usuario arrastre el rayo desde el botón hacia el terreno sin soltar,
+        // no se permite crear un POI o lazo.
+        if (uiConsumedThisPress)
+        {
+            return;
+        }
+
+        // =====================================================
+        // IMPACTO 3D (TERRENO)
+        // =====================================================
+
+        if (EsCapaTerreno(hit.collider.gameObject.layer))
+        {
+            interactionManager.ProcesarEntrada(hit, true);
+        }
+    }
+
+    // =========================================================
+    // VALIDACIÓN DE CAPAS
+    // =========================================================
+
+    private bool EsCapaTerreno(int layer)
+    {
+        return (capaTerreno.value & (1 << layer)) != 0;
+    }
+
+    private bool EsCapaUI(int layer)
+    {
+        return (capaUI.value & (1 << layer)) != 0;
     }
 }

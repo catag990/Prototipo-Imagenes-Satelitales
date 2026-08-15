@@ -1,7 +1,9 @@
 using UnityEngine;
 using Unity.Netcode;
 using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using System.Collections.Generic;
 
 [DefaultExecutionOrder(50)]
 public class TerrainModeManager : NetworkBehaviour
@@ -17,7 +19,7 @@ public class TerrainModeManager : NetworkBehaviour
     private Rigidbody rb;
 
     // false = modo libre
-    // true  = modo mesa fija
+    // true = modo mesa fija
     private NetworkVariable<bool>
         isRotatoryMode =
             new NetworkVariable<bool>(
@@ -32,21 +34,17 @@ public class TerrainModeManager : NetworkBehaviour
     private bool agarreRotacionActivo =
         false;
 
-    // Dirección inicial entre el centro de la mesa
-    // y el controlador que realizó el agarre.
     private Vector3 direccionInicial;
 
-    // Rotación que tenía el terreno al comenzar.
     private float rotacionInicialY;
 
-    // Posición central fija de la mesa.
     private Vector3 posicionMesaFija;
 
     // =========================================================
     // AWAKE
     // =========================================================
 
-    void Awake()
+    private void Awake()
     {
         if (terrenoInteractable == null)
         {
@@ -84,8 +82,9 @@ public class TerrainModeManager : NetworkBehaviour
                 "NetworkTerrainSync no está asignado.");
         }
 
-        // Mantener el punto donde realmente
-        // se tomó el terreno.
+        // Conserva la lógica existente del anexo:
+        // el agarre se produce desde el punto real
+        // donde el usuario tomó el terreno.
         terrenoInteractable.useDynamicAttach =
             true;
 
@@ -97,10 +96,10 @@ public class TerrainModeManager : NetworkBehaviour
     }
 
     // =========================================================
-    // EVENTOS DE AGARRE
+    // EVENTOS XR
     // =========================================================
 
-    void OnEnable()
+    private void OnEnable()
     {
         if (terrenoInteractable == null)
             return;
@@ -116,7 +115,7 @@ public class TerrainModeManager : NetworkBehaviour
                 OnGrabEnded);
     }
 
-    void OnDisable()
+    private void OnDisable()
     {
         if (terrenoInteractable == null)
             return;
@@ -141,6 +140,13 @@ public class TerrainModeManager : NetworkBehaviour
         isRotatoryMode.OnValueChanged +=
             OnModeChanged;
 
+        if (terrainSync != null)
+        {
+            terrainSync
+                .OnLocalManipulationRejected +=
+                OnLocalManipulationRejected;
+        }
+
         AplicarModoLocal(
             isRotatoryMode.Value);
     }
@@ -149,14 +155,37 @@ public class TerrainModeManager : NetworkBehaviour
     {
         isRotatoryMode.OnValueChanged -=
             OnModeChanged;
+
+        if (terrainSync != null)
+        {
+            terrainSync
+                .OnLocalManipulationRejected -=
+                OnLocalManipulationRejected;
+        }
     }
 
     // =========================================================
-    // CAMBIO ENTRE MODO LIBRE Y MODO MESA
+    // CAMBIO DE MODO
     // =========================================================
 
     public void ToggleMode()
     {
+        // -----------------------------------------------------
+        // PRIMERA BARRERA:
+        // comprobación local inmediata.
+        // -----------------------------------------------------
+
+        if (terrainSync == null ||
+            terrainSync.IsTerrainBeingManipulated)
+        {
+            Debug.Log(
+                "[TerrainModeManager] " +
+                "Cambio de modo bloqueado: " +
+                "el terreno está siendo manipulado.");
+
+            return;
+        }
+
         ToggleModeServerRpc();
     }
 
@@ -166,12 +195,22 @@ public class TerrainModeManager : NetworkBehaviour
             RpcInvokePermission.Everyone)]
     private void ToggleModeServerRpc()
     {
+        // -----------------------------------------------------
+        // SEGUNDA BARRERA:
+        // validación autoritativa en servidor.
+        // -----------------------------------------------------
+
+        if (terrainSync == null ||
+            terrainSync.IsTerrainLockedByNetwork)
+        {
+            return;
+        }
+
         isRotatoryMode.Value =
             !isRotatoryMode.Value;
 
         if (isRotatoryMode.Value &&
-            puntoAnclajeMesa != null &&
-            terrainSync != null)
+            puntoAnclajeMesa != null)
         {
             terrainSync.ForceSnapToTable(
                 puntoAnclajeMesa.position,
@@ -186,6 +225,10 @@ public class TerrainModeManager : NetworkBehaviour
         AplicarModoLocal(
             newMode);
     }
+
+    // =========================================================
+    // APLICAR MODO
+    // =========================================================
 
     private void AplicarModoLocal(
         bool rotatory)
@@ -212,15 +255,9 @@ public class TerrainModeManager : NetworkBehaviour
 
         if (rotatory)
         {
-            // =============================================
+            // =================================================
             // MODO MESA FIJA
-            // =============================================
-            //
-            // TerrainModeManager controla manualmente
-            // la rotación horizontal.
-            //
-            // El XR Grab Interactable no mueve ni rota
-            // directamente el terreno.
+            // =================================================
 
             terrenoInteractable.trackPosition =
                 false;
@@ -230,9 +267,9 @@ public class TerrainModeManager : NetworkBehaviour
         }
         else
         {
-            // =============================================
+            // =================================================
             // MODO LIBRE
-            // =============================================
+            // =================================================
 
             terrenoInteractable.trackPosition =
                 true;
@@ -255,37 +292,47 @@ public class TerrainModeManager : NetworkBehaviour
     private void OnGrabStarted(
         SelectEnterEventArgs args)
     {
+        if (terrainSync == null)
+        {
+            ForzarSalidaInteractor(
+                args.interactorObject);
+
+            return;
+        }
+
         // -----------------------------------------------------
-        // IMPORTANTE:
-        // Este llamado ocurre SIEMPRE.
-        //
-        // Tanto en modo libre como en modo mesa,
-        // cualquier agarre bloquea POIs y lazos
-        // para TODOS los clientes.
+        // SOLICITAR LOCK EXCLUSIVO
         // -----------------------------------------------------
 
-        if (terrainSync != null)
-        {
+        bool lockAceptado =
             terrainSync.OnGrabLocally();
-        }
-        else
+
+        if (!lockAceptado)
         {
-            Debug.LogError(
+            // Otro usuario ya posee el terreno.
+            ForzarSalidaInteractor(
+                args.interactorObject);
+
+            Debug.Log(
                 "[TerrainModeManager] " +
-                "No se pudo activar el bloqueo global " +
-                "porque terrainSync es null.");
+                "Agarre rechazado: " +
+                "otro usuario posee el lock del terreno.");
+
+            return;
         }
 
-        // En modo libre no necesitamos
-        // la lógica manual de rotación.
+        // En modo libre el XR Grab realiza
+        // posición/rotación normalmente.
         if (!isRotatoryMode.Value)
             return;
 
         if (puntoAnclajeMesa == null)
             return;
 
-        // Obtener el punto efectivo donde el
-        // controlador tomó el terreno.
+        // =====================================================
+        // ROTACIÓN MANUAL DE MESA FIJA
+        // =====================================================
+
         Transform attachInteractor =
             args.interactorObject
                 .GetAttachTransform(
@@ -303,14 +350,11 @@ public class TerrainModeManager : NetworkBehaviour
         rotacionInicialY =
             transform.eulerAngles.y;
 
-        // Vector horizontal desde el centro de la mesa
-        // al punto de agarre.
         Vector3 direccion =
             interactorActivo.position -
             posicionMesaFija;
 
-        direccion.y =
-            0f;
+        direccion.y = 0f;
 
         if (direccion.sqrMagnitude <
             0.0001f)
@@ -335,11 +379,6 @@ public class TerrainModeManager : NetworkBehaviour
     private void OnGrabEnded(
         SelectExitEventArgs args)
     {
-        // -----------------------------------------------------
-        // IMPORTANTE:
-        // Se libera independientemente de modo libre/fijo.
-        // -----------------------------------------------------
-
         if (terrainSync != null)
         {
             terrainSync.OnReleaseLocally();
@@ -356,10 +395,96 @@ public class TerrainModeManager : NetworkBehaviour
     }
 
     // =========================================================
-    // ROTACIÓN EN MODO MESA
+    // SERVIDOR RECHAZÓ NUESTRA CARRERA DE AGARRE
     // =========================================================
 
-    void LateUpdate()
+    private void OnLocalManipulationRejected()
+    {
+        agarreRotacionActivo =
+            false;
+
+        interactorActivo =
+            null;
+
+        ForzarLiberacionCompleta();
+    }
+
+    // =========================================================
+    // FINALIZAR UNA SELECCIÓN XR
+    // =========================================================
+
+    private void ForzarSalidaInteractor(
+        IXRSelectInteractor interactor)
+    {
+        if (terrenoInteractable == null ||
+            interactor == null)
+        {
+            return;
+        }
+
+        XRInteractionManager manager =
+            terrenoInteractable
+                .interactionManager;
+
+        if (manager == null)
+            return;
+
+        // Trabajar sobre una copia evita modificar
+        // directamente la colección de Unity.
+        List<IXRSelectInteractor> seleccionadores =
+            new List<IXRSelectInteractor>(
+                terrenoInteractable
+                    .interactorsSelecting);
+
+        foreach (IXRSelectInteractor seleccionado
+                 in seleccionadores)
+        {
+            if (seleccionado != interactor)
+                continue;
+
+            manager.SelectExit(
+                seleccionado,
+                terrenoInteractable);
+
+            break;
+        }
+    }
+
+    // =========================================================
+    // LIBERAR TODAS LAS MANOS LOCALES
+    // =========================================================
+
+    private void ForzarLiberacionCompleta()
+    {
+        if (terrenoInteractable == null)
+            return;
+
+        XRInteractionManager manager =
+            terrenoInteractable
+                .interactionManager;
+
+        if (manager == null)
+            return;
+
+        List<IXRSelectInteractor> seleccionadores =
+            new List<IXRSelectInteractor>(
+                terrenoInteractable
+                    .interactorsSelecting);
+
+        foreach (IXRSelectInteractor interactor
+                 in seleccionadores)
+        {
+            manager.SelectExit(
+                interactor,
+                terrenoInteractable);
+        }
+    }
+
+    // =========================================================
+    // ROTACIÓN DE MESA FIJA
+    // =========================================================
+
+    private void LateUpdate()
     {
         if (!isRotatoryMode.Value ||
             puntoAnclajeMesa == null)
@@ -367,19 +492,23 @@ public class TerrainModeManager : NetworkBehaviour
             return;
         }
 
-        // La mesa conserva su centro fijo.
+        // La posición siempre permanece fija.
         transform.position =
             puntoAnclajeMesa.position;
 
+        // Solo quien posee realmente el lock
+        // puede aplicar rotación.
         if (agarreRotacionActivo &&
-            interactorActivo != null)
+            interactorActivo != null &&
+            terrainSync != null &&
+            terrainSync
+                .IsLocalClientManipulationOwner)
         {
             Vector3 direccionActual =
                 interactorActivo.position -
                 posicionMesaFija;
 
-            direccionActual.y =
-                0f;
+            direccionActual.y = 0f;
 
             if (direccionActual.sqrMagnitude >
                 0.0001f)
@@ -405,7 +534,7 @@ public class TerrainModeManager : NetworkBehaviour
         }
         else
         {
-            // Bloquear inclinación accidental.
+            // Anular inclinación X/Z.
             Vector3 eulerTerreno =
                 transform.eulerAngles;
 
@@ -416,8 +545,7 @@ public class TerrainModeManager : NetworkBehaviour
                     0f);
         }
 
-        // Mantener sincronizada visualmente
-        // la base de la mesa.
+        // Sincronización visual de la mesa.
         if (mesaVisual != null)
         {
             Vector3 eulerMesa =
@@ -431,8 +559,7 @@ public class TerrainModeManager : NetworkBehaviour
                     new Vector3(
                         eulerMesa.x,
                         transform
-                            .localEulerAngles
-                            .y,
+                            .localEulerAngles.y,
                         eulerMesa.z);
         }
     }

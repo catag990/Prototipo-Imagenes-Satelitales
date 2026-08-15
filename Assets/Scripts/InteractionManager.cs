@@ -11,51 +11,91 @@ public enum ToolMode
 
 public class InteractionManager : NetworkBehaviour
 {
+    // =========================================================
+    // HERRAMIENTAS
+    // =========================================================
+
     [Header("Herramientas")]
-    public ToolMode currentTool = ToolMode.POI;
+    public ToolMode currentTool =
+        ToolMode.POI;
+
     public POIPlacementSystem poiSystem;
     public LassoTool lassoTool;
+
+    // =========================================================
+    // CONTROL DEL TERRENO
+    // =========================================================
 
     [Header("Control de Terreno")]
     public NetworkTerrainSync terrainSync;
     public XRGrabInteractable terrenoInteractable;
 
+    // =========================================================
+    // ENTORNO
+    // =========================================================
+
     [Header("Prefabs y Entorno")]
     public GameObject flagPrefab;
     public Transform contenedorTerreno;
 
-    private bool yaPuseUnPOI = false;
-    private bool isLassoDrawing = false;
-    private bool errorTerrainSyncReportado = false;
+    // =========================================================
+    // ESTADO LOCAL
+    // =========================================================
 
-    private NetworkList<GeoMarkerData> historialMarcadores;
-    private NetworkList<Vector3> historialPuntosLazo;
+    private bool yaPuseUnPOI =
+        false;
 
-    private Dictionary<ulong, GameObject> localVisuals =
-        new Dictionary<ulong, GameObject>();
+    private bool isLassoDrawing =
+        false;
 
-    // ID monotónico.
-    // No depende de historialMarcadores.Count porque
-    // la eliminación individual haría posible repetir IDs.
+    private bool errorTerrainSyncReportado =
+        false;
+
+    // =========================================================
+    // ESTADO DE RED
+    // =========================================================
+
+    private NetworkList<GeoMarkerData>
+        historialMarcadores;
+
+    private NetworkList<Vector3>
+        historialPuntosLazo;
+
+    // ID independiente de Count.
+    //
+    // Es obligatorio cuando existe eliminación
+    // individual para evitar reutilizar IDs activos.
     private ulong nextMarkerID = 0;
+
+    // =========================================================
+    // REPRESENTACIÓN LOCAL
+    // =========================================================
+
+    private Dictionary<ulong, GameObject>
+        localVisuals =
+            new Dictionary<ulong, GameObject>();
 
     // =========================================================
     // EVENTOS DE UI
     // =========================================================
 
-    public System.Action<GeoMarkerData> OnMarkerAddedLocal;
-    public System.Action<GeoMarkerData> OnMarkerUpdatedLocal;
+    public System.Action<GeoMarkerData>
+        OnMarkerAddedLocal;
 
-    // Nuevo evento de eliminación individual.
-    public System.Action<ulong> OnMarkerDeletedLocal;
+    public System.Action<GeoMarkerData>
+        OnMarkerUpdatedLocal;
 
-    public System.Action OnEnvironmentReset;
+    public System.Action<ulong>
+        OnMarkerDeletedLocal;
+
+    public System.Action
+        OnEnvironmentReset;
 
     // =========================================================
-    // INICIALIZACIÓN
+    // AWAKE
     // =========================================================
 
-    void Awake()
+    private void Awake()
     {
         historialMarcadores =
             new NetworkList<GeoMarkerData>();
@@ -63,60 +103,66 @@ public class InteractionManager : NetworkBehaviour
         historialPuntosLazo =
             new NetworkList<Vector3>();
 
-        // Intentar recuperar referencias si no fueron
-        // asignadas directamente desde el Inspector.
-        if (contenedorTerreno != null)
+        ResolverReferenciasTerreno();
+    }
+
+    private void ResolverReferenciasTerreno()
+    {
+        if (contenedorTerreno == null)
+            return;
+
+        if (terrainSync == null)
         {
+            terrainSync =
+                contenedorTerreno
+                    .GetComponent<
+                        NetworkTerrainSync>();
+
             if (terrainSync == null)
             {
                 terrainSync =
                     contenedorTerreno
-                        .GetComponent<NetworkTerrainSync>();
-
-                if (terrainSync == null)
-                {
-                    terrainSync =
-                        contenedorTerreno
-                            .GetComponentInParent<
-                                NetworkTerrainSync>();
-                }
+                        .GetComponentInParent<
+                            NetworkTerrainSync>();
             }
+        }
+
+        if (terrenoInteractable == null)
+        {
+            terrenoInteractable =
+                contenedorTerreno
+                    .GetComponent<
+                        XRGrabInteractable>();
 
             if (terrenoInteractable == null)
             {
                 terrenoInteractable =
                     contenedorTerreno
-                        .GetComponent<XRGrabInteractable>();
-
-                if (terrenoInteractable == null)
-                {
-                    terrenoInteractable =
-                        contenedorTerreno
-                            .GetComponentInParent<
-                                XRGrabInteractable>();
-                }
+                        .GetComponentInParent<
+                            XRGrabInteractable>();
             }
         }
     }
 
     // =========================================================
-    // BLOQUEO GLOBAL DE MARCACIÓN
+    // CONTROL GLOBAL DE MARCACIÓN
     // =========================================================
 
     private bool EstaBloqueadaLaMarcacion()
     {
-        // Fallar cerrado:
-        // si falta NetworkTerrainSync no se permite crear
-        // POIs o lazos.
+        // Fallar cerrado.
         if (terrainSync == null)
         {
             if (!errorTerrainSyncReportado)
             {
                 Debug.LogError(
-                    "[InteractionManager] terrainSync no está asignado. " +
-                    "La creación de POIs y lazos queda bloqueada.");
+                    "[InteractionManager] " +
+                    "terrainSync no está asignado. " +
+                    "La creación de POIs y lazos " +
+                    "permanece bloqueada.");
 
-                errorTerrainSyncReportado = true;
+                errorTerrainSyncReportado =
+                    true;
             }
 
             return true;
@@ -129,8 +175,9 @@ public class InteractionManager : NetworkBehaviour
             return true;
         }
 
-        // Bloqueo global proveniente de NetworkTerrainSync.
-        if (terrainSync.IsTerrainBeingManipulated)
+        // Bloqueo local o remoto.
+        if (terrainSync
+            .IsTerrainBeingManipulated)
         {
             return true;
         }
@@ -138,18 +185,29 @@ public class InteractionManager : NetworkBehaviour
         return false;
     }
 
+    // =========================================================
+    // CAMBIO DE ESTADO DEL TERRENO
+    // =========================================================
+
     private void OnTerrainManipulationChanged(
         bool estaManipulando)
     {
         if (!estaManipulando)
             return;
 
+        // Si alguien comienza a manipular
+        // mientras dibujamos, cancelar.
         CancelarInteraccionDeMarcado();
     }
 
+    // =========================================================
+    // CANCELACIÓN LOCAL DE MARCADO
+    // =========================================================
+
     private void CancelarInteraccionDeMarcado()
     {
-        yaPuseUnPOI = false;
+        yaPuseUnPOI =
+            false;
 
         if (isLassoDrawing)
         {
@@ -158,8 +216,18 @@ public class InteractionManager : NetworkBehaviour
                 lassoTool.CancelarLazo();
             }
 
-            isLassoDrawing = false;
+            isLassoDrawing =
+                false;
         }
+    }
+
+    // =========================================================
+    // CAPTURA DE UI
+    // =========================================================
+
+    public void CancelarMarcacionPorUI()
+    {
+        CancelarInteraccionDeMarcado();
     }
 
     // =========================================================
@@ -170,7 +238,8 @@ public class InteractionManager : NetworkBehaviour
     {
         if (terrainSync != null)
         {
-            terrainSync.OnTerrainManipulationStateChanged +=
+            terrainSync
+                .OnTerrainManipulationStateChanged +=
                 OnTerrainManipulationChanged;
         }
         else
@@ -180,36 +249,52 @@ public class InteractionManager : NetworkBehaviour
                 "No existe referencia a NetworkTerrainSync.");
         }
 
-        // El servidor calcula el próximo ID disponible.
-        //
-        // Esto también protege el sistema si el objeto
-        // vuelve a realizar NetworkSpawn manteniendo historial.
+        // El servidor determina el siguiente ID
+        // disponible a partir de los existentes.
         if (IsServer)
         {
-            nextMarkerID = 0;
+            bool existeMarcador =
+                false;
+
+            ulong maxMarkerID =
+                0;
 
             foreach (GeoMarkerData marker
                      in historialMarcadores)
             {
-                if (marker.markerID >= nextMarkerID)
+                if (!existeMarcador ||
+                    marker.markerID >
+                    maxMarkerID)
                 {
-                    nextMarkerID =
-                        marker.markerID + 1;
+                    maxMarkerID =
+                        marker.markerID;
+
+                    existeMarcador =
+                        true;
                 }
             }
+
+            nextMarkerID =
+                existeMarcador
+                    ? maxMarkerID + 1
+                    : 0;
         }
 
-        // Reconstrucción para Late-Joining.
+        // Late-Joining.
         foreach (GeoMarkerData marker
                  in historialMarcadores)
         {
-            if (marker.type == MarkerType.POI)
+            if (marker.type ==
+                MarkerType.POI)
             {
-                ReconstruirPOI(marker);
+                ReconstruirPOI(
+                    marker);
             }
-            else if (marker.type == MarkerType.Lasso)
+            else if (marker.type ==
+                     MarkerType.Lasso)
             {
-                ReconstruirLazoDesdeHistorial(marker);
+                ReconstruirLazoDesdeHistorial(
+                    marker);
             }
         }
     }
@@ -218,13 +303,14 @@ public class InteractionManager : NetworkBehaviour
     {
         if (terrainSync != null)
         {
-            terrainSync.OnTerrainManipulationStateChanged -=
+            terrainSync
+                .OnTerrainManipulationStateChanged -=
                 OnTerrainManipulationChanged;
         }
     }
 
     // =========================================================
-    // SELECCIÓN DE HERRAMIENTAS
+    // SELECCIÓN DE HERRAMIENTA
     // =========================================================
 
     public void SetToolPOI()
@@ -240,28 +326,35 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // PROCESAMIENTO DE INPUT
+    // INPUT
     // =========================================================
 
     public void ProcesarEntrada(
         RaycastHit hit,
         bool estaPresionado)
     {
-        // Ningún usuario puede marcar mientras
-        // cualquier usuario manipula el terreno.
+        // =====================================================
+        // BARRERA DE MANIPULACIÓN
+        // =====================================================
+
         if (EstaBloqueadaLaMarcacion())
         {
             CancelarInteraccionDeMarcado();
             return;
         }
 
+        // =====================================================
+        // TRIGGER PRESIONADO
+        // =====================================================
+
         if (estaPresionado)
         {
-            // =================================================
+            // -------------------------------------------------
             // LAZO
-            // =================================================
+            // -------------------------------------------------
 
-            if (currentTool == ToolMode.Lasso &&
+            if (currentTool ==
+                    ToolMode.Lasso &&
                 hit.collider != null)
             {
                 if (!isLassoDrawing)
@@ -279,12 +372,13 @@ public class InteractionManager : NetworkBehaviour
                 }
             }
 
-            // =================================================
+            // -------------------------------------------------
             // POI
-            // =================================================
+            // -------------------------------------------------
 
             else if (
-                currentTool == ToolMode.POI &&
+                currentTool ==
+                    ToolMode.POI &&
                 !yaPuseUnPOI &&
                 contenedorTerreno != null &&
                 hit.collider != null)
@@ -307,6 +401,11 @@ public class InteractionManager : NetworkBehaviour
                     true;
             }
         }
+
+        // =====================================================
+        // TRIGGER FÍSICAMENTE LIBERADO
+        // =====================================================
+
         else
         {
             yaPuseUnPOI =
@@ -314,7 +413,7 @@ public class InteractionManager : NetworkBehaviour
 
             if (isLassoDrawing)
             {
-                // Revalidar antes de finalizar.
+                // Segunda comprobación.
                 if (EstaBloqueadaLaMarcacion())
                 {
                     CancelarInteraccionDeMarcado();
@@ -352,7 +451,7 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // CREACIÓN DE POI
+    // REGISTRAR POI
     // =========================================================
 
     [Rpc(
@@ -363,21 +462,24 @@ public class InteractionManager : NetworkBehaviour
         Vector3 posLocal,
         Vector3 normLocal)
     {
-        // Validación autoritativa.
+        // BARRERA AUTORITATIVA.
         if (terrainSync == null)
         {
             Debug.LogWarning(
                 "[InteractionManager] " +
-                "POI rechazado: terrainSync no disponible.");
+                "POI rechazado: " +
+                "terrainSync no está disponible.");
 
             return;
         }
 
-        if (terrainSync.IsTerrainLockedByNetwork)
+        if (terrainSync
+            .IsTerrainLockedByNetwork)
         {
             Debug.Log(
                 "[InteractionManager] " +
-                "POI rechazado: terreno en manipulación.");
+                "POI rechazado: " +
+                "el terreno está siendo manipulado.");
 
             return;
         }
@@ -415,7 +517,7 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // CREACIÓN DE LAZO
+    // REGISTRAR LAZO
     // =========================================================
 
     [Rpc(
@@ -425,21 +527,23 @@ public class InteractionManager : NetworkBehaviour
     private void RegistrarLazoServerRpc(
         Vector3[] puntosLocales)
     {
-        // Validación autoritativa.
         if (terrainSync == null)
         {
             Debug.LogWarning(
                 "[InteractionManager] " +
-                "Lazo rechazado: terrainSync no disponible.");
+                "Lazo rechazado: " +
+                "terrainSync no está disponible.");
 
             return;
         }
 
-        if (terrainSync.IsTerrainLockedByNetwork)
+        if (terrainSync
+            .IsTerrainLockedByNetwork)
         {
             Debug.Log(
                 "[InteractionManager] " +
-                "Lazo rechazado: terreno en manipulación.");
+                "Lazo rechazado: " +
+                "el terreno está siendo manipulado.");
 
             return;
         }
@@ -494,14 +598,15 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // RPC DE REPRESENTACIÓN
+    // PROPAGACIÓN VISUAL
     // =========================================================
 
     [Rpc(SendTo.Everyone)]
     private void DibujarPOIRpc(
         GeoMarkerData data)
     {
-        ReconstruirPOI(data);
+        ReconstruirPOI(
+            data);
     }
 
     [Rpc(SendTo.Everyone)]
@@ -515,36 +620,41 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // RECONSTRUCCIÓN DE POI
+    // RECONSTRUIR POI
     // =========================================================
 
     private void ReconstruirPOI(
         GeoMarkerData data)
     {
-        if (contenedorTerreno == null)
+        if (contenedorTerreno == null ||
+            flagPrefab == null)
+        {
             return;
+        }
 
         Vector3 posicionMundo =
             contenedorTerreno
                 .TransformPoint(
                     data.position);
 
-        Vector3 normalMundo =
-            contenedorTerreno
-                .TransformDirection(
-                    data.normal);
+        Quaternion rotacion =
+            Quaternion.FromToRotation(
+                Vector3.up,
+                contenedorTerreno
+                    .TransformDirection(
+                        data.normal));
 
         GameObject nuevaBandera =
             Instantiate(
                 flagPrefab,
                 posicionMundo,
-                Quaternion.FromToRotation(
-                    Vector3.up,
-                    normalMundo));
+                rotacion);
 
-        nuevaBandera.transform.SetParent(
-            contenedorTerreno,
-            true);
+        nuevaBandera
+            .transform
+            .SetParent(
+                contenedorTerreno,
+                true);
 
         if (poiSystem != null)
         {
@@ -552,8 +662,9 @@ public class InteractionManager : NetworkBehaviour
                 nuevaBandera);
         }
 
-        localVisuals[data.markerID] =
-            nuevaBandera;
+        localVisuals[
+            data.markerID] =
+                nuevaBandera;
 
         AplicarEstiloVisual(
             nuevaBandera,
@@ -564,7 +675,7 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // RECONSTRUCCIÓN DE LAZO
+    // RECONSTRUIR LAZO
     // =========================================================
 
     private void ReconstruirLazo(
@@ -572,7 +683,8 @@ public class InteractionManager : NetworkBehaviour
         Vector3[] puntosLocales)
     {
         if (contenedorTerreno == null ||
-            lassoTool == null)
+            lassoTool == null ||
+            puntosLocales == null)
         {
             return;
         }
@@ -581,13 +693,16 @@ public class InteractionManager : NetworkBehaviour
             new GameObject(
                 $"Lazo_Network_{data.markerID}");
 
-        lineaObj.transform.SetParent(
-            contenedorTerreno,
-            false);
+        lineaObj
+            .transform
+            .SetParent(
+                contenedorTerreno,
+                false);
 
         LineRenderer lr =
-            lineaObj.AddComponent<
-                LineRenderer>();
+            lineaObj
+                .AddComponent<
+                    LineRenderer>();
 
         lr.material =
             lassoTool.materialLinea;
@@ -607,8 +722,9 @@ public class InteractionManager : NetworkBehaviour
         lr.SetPositions(
             puntosLocales);
 
-        localVisuals[data.markerID] =
-            lineaObj;
+        localVisuals[
+            data.markerID] =
+                lineaObj;
 
         AplicarEstiloVisual(
             lineaObj,
@@ -618,11 +734,26 @@ public class InteractionManager : NetworkBehaviour
             data);
     }
 
+    // =========================================================
+    // LATE-JOINING LAZO
+    // =========================================================
+
     private void ReconstruirLazoDesdeHistorial(
         GeoMarkerData data)
     {
-        if (data.lassoPointCount <= 0)
+        if (data.lassoStartIndex < 0 ||
+            data.lassoPointCount <= 0 ||
+            data.lassoStartIndex +
+                data.lassoPointCount >
+                historialPuntosLazo.Count)
+        {
+            Debug.LogWarning(
+                "[InteractionManager] " +
+                "No se pudo reconstruir el lazo " +
+                $"{data.markerID}: índices inválidos.");
+
             return;
+        }
 
         Vector3[] puntosExtraidos =
             new Vector3[
@@ -632,22 +763,10 @@ public class InteractionManager : NetworkBehaviour
              i < data.lassoPointCount;
              i++)
         {
-            int indice =
-                data.lassoStartIndex + i;
-
-            if (indice < 0 ||
-                indice >= historialPuntosLazo.Count)
-            {
-                Debug.LogWarning(
-                    "[InteractionManager] " +
-                    "Índice de lazo fuera de rango.");
-
-                return;
-            }
-
             puntosExtraidos[i] =
                 historialPuntosLazo[
-                    indice];
+                    data.lassoStartIndex +
+                    i];
         }
 
         ReconstruirLazo(
@@ -656,7 +775,7 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // ACTUALIZACIÓN DE MARCADORES
+    // MODIFICACIÓN
     // =========================================================
 
     public void SolicitarCambioMarcador(
@@ -682,37 +801,49 @@ public class InteractionManager : NetworkBehaviour
         Color newColor,
         MarkerTag newTag)
     {
+        bool encontrado =
+            false;
+
         for (int i = 0;
              i < historialMarcadores.Count;
              i++)
         {
             if (historialMarcadores[i]
-                    .markerID == markerID)
+                    .markerID !=
+                markerID)
             {
-                GeoMarkerData data =
-                    historialMarcadores[i];
-
-                data.isVisible =
-                    isVisible;
-
-                data.color =
-                    newColor;
-
-                data.tag =
-                    newTag;
-
-                historialMarcadores[i] =
-                    data;
-
-                UpdateMarkerClientRpc(
-                    markerID,
-                    isVisible,
-                    newColor,
-                    newTag);
-
-                return;
+                continue;
             }
+
+            GeoMarkerData data =
+                historialMarcadores[i];
+
+            data.isVisible =
+                isVisible;
+
+            data.color =
+                newColor;
+
+            data.tag =
+                newTag;
+
+            historialMarcadores[i] =
+                data;
+
+            encontrado =
+                true;
+
+            break;
         }
+
+        if (!encontrado)
+            return;
+
+        UpdateMarkerClientRpc(
+            markerID,
+            isVisible,
+            newColor,
+            newTag);
     }
 
     [Rpc(SendTo.Everyone)]
@@ -775,13 +906,17 @@ public class InteractionManager : NetworkBehaviour
         GeoMarkerData markerAEliminar =
             default;
 
-        // Buscar marcador por ID.
+        // -----------------------------------------------------
+        // LOCALIZAR MARCADOR
+        // -----------------------------------------------------
+
         for (int i = 0;
              i < historialMarcadores.Count;
              i++)
         {
             if (historialMarcadores[i]
-                    .markerID == markerID)
+                    .markerID ==
+                markerID)
             {
                 markerIndex =
                     i;
@@ -793,104 +928,102 @@ public class InteractionManager : NetworkBehaviour
             }
         }
 
-        // Puede ocurrir si dos solicitudes intentan
-        // eliminar el mismo marcador.
         if (markerIndex < 0)
-        {
             return;
-        }
 
-        // Si es un lazo, también deben eliminarse
-        // sus puntos del Flat Buffer.
+        // -----------------------------------------------------
+        // SI ES LAZO:
+        // eliminar su segmento del flat buffer.
+        // -----------------------------------------------------
+
         if (markerAEliminar.type ==
             MarkerType.Lasso)
         {
-            EliminarPuntosDelLazo(
-                markerAEliminar);
+            int startIndex =
+                markerAEliminar
+                    .lassoStartIndex;
+
+            int pointCount =
+                markerAEliminar
+                    .lassoPointCount;
+
+            bool rangoValido =
+                startIndex >= 0 &&
+                pointCount >= 0 &&
+                startIndex +
+                    pointCount <=
+                    historialPuntosLazo.Count;
+
+            if (!rangoValido)
+            {
+                Debug.LogError(
+                    "[InteractionManager] " +
+                    "El lazo no puede eliminarse: " +
+                    "su rango de puntos es inválido.");
+
+                return;
+            }
+
+            // Eliminar de atrás hacia adelante
+            // para no desplazar los índices
+            // durante la operación.
+            for (int i =
+                     pointCount - 1;
+                 i >= 0;
+                 i--)
+            {
+                historialPuntosLazo
+                    .RemoveAt(
+                        startIndex +
+                        i);
+            }
+
+            // -------------------------------------------------
+            // REAJUSTAR LOS LAZOS POSTERIORES
+            // -------------------------------------------------
+
+            for (int i = 0;
+                 i < historialMarcadores.Count;
+                 i++)
+            {
+                GeoMarkerData data =
+                    historialMarcadores[i];
+
+                if (data.markerID ==
+                    markerID)
+                {
+                    continue;
+                }
+
+                if (data.type !=
+                    MarkerType.Lasso)
+                {
+                    continue;
+                }
+
+                if (data.lassoStartIndex >
+                    startIndex)
+                {
+                    data.lassoStartIndex -=
+                        pointCount;
+
+                    historialMarcadores[i] =
+                        data;
+                }
+            }
         }
 
-        // Eliminar metadata del marcador.
-        historialMarcadores.RemoveAt(
-            markerIndex);
+        MarkerType tipoEliminado =
+            markerAEliminar.type;
 
-        // Ordenar a todos los clientes que eliminen
-        // la representación local.
+        historialMarcadores
+            .RemoveAt(
+                markerIndex);
+
         EliminarMarcadorClientRpc(
             markerID,
-            markerAEliminar.type);
+            tipoEliminado);
     }
-
-    // =========================================================
-    // COMPACTACIÓN DEL FLAT BUFFER DE LAZOS
-    // =========================================================
-
-    private void EliminarPuntosDelLazo(
-        GeoMarkerData markerAEliminar)
-    {
-        int inicio =
-            markerAEliminar.lassoStartIndex;
-
-        int cantidad =
-            markerAEliminar.lassoPointCount;
-
-        if (cantidad <= 0)
-        {
-            return;
-        }
-
-        if (inicio < 0 ||
-            inicio + cantidad >
-                historialPuntosLazo.Count)
-        {
-            Debug.LogError(
-                "[InteractionManager] " +
-                $"No fue posible eliminar los puntos del lazo " +
-                $"{markerAEliminar.markerID}: rango inválido.");
-
-            return;
-        }
-
-        // Eliminar desde el último elemento hacia el primero
-        // para mantener índices válidos durante la eliminación.
-        for (int i =
-             inicio + cantidad - 1;
-             i >= inicio;
-             i--)
-        {
-            historialPuntosLazo.RemoveAt(i);
-        }
-
-        // Los lazos ubicados después del bloque eliminado
-        // deben desplazar su índice inicial.
-        for (int i = 0;
-             i < historialMarcadores.Count;
-             i++)
-        {
-            GeoMarkerData data =
-                historialMarcadores[i];
-
-            // Ignorar el lazo que estamos eliminando.
-            if (data.markerID ==
-                markerAEliminar.markerID)
-            {
-                continue;
-            }
-
-            if (data.type == MarkerType.Lasso &&
-                data.lassoStartIndex > inicio)
-            {
-                data.lassoStartIndex -=
-                    cantidad;
-
-                historialMarcadores[i] =
-                    data;
-            }
-        }
-    }
-
-    // =========================================================
-    // ELIMINACIÓN VISUAL EN CLIENTES
-    // =========================================================
 
     [Rpc(SendTo.Everyone)]
     private void EliminarMarcadorClientRpc(
@@ -901,9 +1034,8 @@ public class InteractionManager : NetworkBehaviour
             markerID,
             out GameObject obj))
         {
-            // Si corresponde a un POI, retirar también
-            // su referencia de POIPlacementSystem.
-            if (markerType == MarkerType.POI &&
+            if (markerType ==
+                    MarkerType.POI &&
                 poiSystem != null)
             {
                 poiSystem.UnregisterPOI(
@@ -912,15 +1044,16 @@ public class InteractionManager : NetworkBehaviour
 
             if (obj != null)
             {
-                Destroy(obj);
+                Destroy(
+                    obj);
             }
 
             localVisuals.Remove(
                 markerID);
         }
 
-        // La fila se elimina aunque el objeto visual
-        // ya no estuviera disponible.
+        // La UI elimina su fila aunque
+        // la representación local no exista.
         OnMarkerDeletedLocal?.Invoke(
             markerID);
     }
@@ -963,8 +1096,7 @@ public class InteractionManager : NetworkBehaviour
                 obj.GetComponentInChildren<
                     MeshRenderer>();
 
-            if (renderer != null &&
-                renderer.material != null)
+            if (renderer != null)
             {
                 renderer.material.SetColor(
                     "_BaseColor",
@@ -974,7 +1106,7 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // REFRESCO UI
+    // REFRESCAR UI
     // =========================================================
 
     public void RefrescarUIExistente()
@@ -1020,29 +1152,14 @@ public class InteractionManager : NetworkBehaviour
 
         if (contenedorTerreno != null)
         {
-            // Copiar primero los objetos a destruir para
-            // evitar problemas al modificar la jerarquía
-            // mientras se itera sobre ella.
-            List<GameObject> lazosAEliminar =
-                new List<GameObject>();
-
             foreach (Transform child
                      in contenedorTerreno)
             {
                 if (child.name.StartsWith(
                     "Lazo_Network_"))
                 {
-                    lazosAEliminar.Add(
+                    Destroy(
                         child.gameObject);
-                }
-            }
-
-            foreach (GameObject lazo
-                     in lazosAEliminar)
-            {
-                if (lazo != null)
-                {
-                    Destroy(lazo);
                 }
             }
         }

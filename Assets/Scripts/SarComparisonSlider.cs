@@ -14,55 +14,32 @@ public class SarComparisonSlider :
     public SarGuidanceUI guidanceUI;
     public Slider comparisonSlider;
 
-    private bool usuarioInteractuando =
-        false;
+    private bool usuarioInteractuando = false;
 
     // =========================================================
-    // START
+    // START & DESTROY
     // =========================================================
-
     private void Start()
     {
-        if (comparisonSlider == null)
-        {
-            comparisonSlider =
-                GetComponent<Slider>();
-        }
+        if (comparisonSlider == null) comparisonSlider = GetComponent<Slider>();
 
         if (comparisonSlider == null)
         {
-            Debug.LogError(
-                "[SarComparisonSlider] " +
-                "No existe componente Slider.");
-
+            Debug.LogError("[SarComparisonSlider] No existe componente Slider.");
             return;
         }
 
-        comparisonSlider.minValue =
-            0f;
+        comparisonSlider.minValue = 0f;
+        comparisonSlider.maxValue = 1f;
+        comparisonSlider.wholeNumbers = false;
 
-        comparisonSlider.maxValue =
-            1f;
-
-        comparisonSlider.wholeNumbers =
-            false;
-
-        comparisonSlider.SetValueWithoutNotify(
-            1f);
-
-        comparisonSlider.onValueChanged.AddListener(
-            OnSliderValueChanged);
+        comparisonSlider.onValueChanged.AddListener(OnSliderValueChanged);
 
         if (layerManager != null)
         {
-            layerManager.OnSarStateChangedLocal +=
-                OnSarStateChanged;
-
-            layerManager.OnLocalBlendChanged +=
-                OnLocalBlendChanged;
-
-            ActualizarEstado(
-                layerManager.IsSarActive);
+            layerManager.OnSarStateChangedLocal += OnSarStateChanged;
+            layerManager.OnLocalBlendChanged += OnLocalBlendChanged;
+            ActualizarEstado(layerManager.IsSarActive);
         }
     }
 
@@ -70,127 +47,91 @@ public class SarComparisonSlider :
     {
         if (comparisonSlider != null)
         {
-            comparisonSlider.onValueChanged.RemoveListener(
-                OnSliderValueChanged);
+            comparisonSlider.onValueChanged.RemoveListener(OnSliderValueChanged);
         }
 
         if (layerManager != null)
         {
-            layerManager.OnSarStateChangedLocal -=
-                OnSarStateChanged;
-
-            layerManager.OnLocalBlendChanged -=
-                OnLocalBlendChanged;
+            layerManager.OnSarStateChangedLocal -= OnSarStateChanged;
+            layerManager.OnLocalBlendChanged -= OnLocalBlendChanged;
         }
     }
 
     // =========================================================
     // CAMBIO DEL SLIDER
     // =========================================================
-
-    private void OnSliderValueChanged(
-        float value)
+    private void OnSliderValueChanged(float value)
     {
-        if (!usuarioInteractuando)
-        {
-            return;
-        }
+        if (!usuarioInteractuando) return;
+        if (layerManager == null || !layerManager.IsSarActive) return;
 
-        if (layerManager == null ||
-            !layerManager.IsSarActive)
-        {
-            return;
-        }
+        if (guidanceUI != null && guidanceUI.IsMicroExplanationActive) return;
 
-        if (guidanceUI != null &&
-            guidanceUI.IsMicroExplanationActive)
-        {
-            return;
-        }
-
-        layerManager.SetLocalComparisonBlend(
-            value);
+        layerManager.SetLocalComparisonBlend(value);
     }
 
     // =========================================================
     // SINCRONIZACIÓN VISUAL
     // =========================================================
-
-    private void OnLocalBlendChanged(
-        float blend)
+    private void OnLocalBlendChanged(float blend)
     {
-        if (comparisonSlider == null)
-        {
-            return;
-        }
-
-        comparisonSlider.SetValueWithoutNotify(
-            blend);
+        if (comparisonSlider == null) return;
+        comparisonSlider.SetValueWithoutNotify(blend);
     }
 
-    private void OnSarStateChanged(
-        bool sarActive)
+    private void OnSarStateChanged(bool sarActive)
     {
-        ActualizarEstado(
-            sarActive);
+        ActualizarEstado(sarActive);
     }
 
-    private void ActualizarEstado(
-        bool sarActive)
+    private void ActualizarEstado(bool sarActive)
     {
-        if (comparisonSlider == null)
-        {
-            return;
-        }
+        if (comparisonSlider == null) return;
 
-        comparisonSlider.interactable =
-            sarActive &&
-            layerManager != null &&
-            layerManager.SupportsSmoothComparison;
+        comparisonSlider.interactable = sarActive && layerManager != null && layerManager.SupportsSmoothComparison;
 
-        comparisonSlider.SetValueWithoutNotify(
-            sarActive ? 1f : 0f);
+        // MODIFICADO (PUNTO 5): Si SAR está activo, usa la memoria guardada en vez de forzar a 1f
+        float targetValue = (sarActive && layerManager != null) ? layerManager.SavedSarBlend : 0f;
+        comparisonSlider.SetValueWithoutNotify(targetValue);
     }
 
     // =========================================================
     // POINTER / DRAG
     // =========================================================
-
-    public void OnPointerDown(
-        PointerEventData eventData)
+    public void OnPointerDown(PointerEventData eventData)
     {
-        usuarioInteractuando =
-            true;
+        usuarioInteractuando = true;
     }
 
-    public void OnBeginDrag(
-        PointerEventData eventData)
+    public void OnBeginDrag(PointerEventData eventData)
     {
-        usuarioInteractuando =
-            true;
+        usuarioInteractuando = true;
     }
 
-    public void OnPointerUp(
-        PointerEventData eventData)
+    public void OnPointerUp(PointerEventData eventData)
     {
         FinalizarComparacion();
     }
 
-    public void OnEndDrag(
-        PointerEventData eventData)
+    public void OnEndDrag(PointerEventData eventData)
     {
         FinalizarComparacion();
     }
 
     private void FinalizarComparacion()
     {
-        if (!usuarioInteractuando)
+        if (!usuarioInteractuando) return;
+        usuarioInteractuando = false;
+
+        if (layerManager != null && layerManager.IsSarActive)
         {
-            return;
+            layerManager.ReturnToSarLocal();
+            
+            // MODIFICADO (PUNTO 5): Mantiene visualmente la elección del usuario
+            if (comparisonSlider != null)
+            {
+                comparisonSlider.SetValueWithoutNotify(layerManager.SavedSarBlend);
+            }
         }
-
-        usuarioInteractuando =
-            false;
-
     }
 }

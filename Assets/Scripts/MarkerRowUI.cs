@@ -190,7 +190,7 @@ public class MarkerRowUI : MonoBehaviour
         if (nombreTxt != null)
         {
             nombreTxt.text =
-                $"{dataRef.type} [{dataRef.tag}]";
+                $"{dataRef.type} {dataRef.markerNumber} [{dataRef.tag}]";
 
             nombreTxt.color =
                 dataRef.color;

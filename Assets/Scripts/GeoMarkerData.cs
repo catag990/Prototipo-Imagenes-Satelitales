@@ -7,23 +7,25 @@ public enum MarkerTag { Riesgo, Agua, Alerta, Generico }
 [System.Serializable]
 public struct GeoMarkerData : INetworkSerializable, System.IEquatable<GeoMarkerData>
 {
-    public ulong markerID;     
+    public ulong markerID;
+    public int markerNumber; // <--- AÑADIDO: Número de orden visual (1, 2, 3...)
     public MarkerType type;
     public MarkerTag tag;
     public Color color;
     public bool isVisible;
 
-    // --- Datos Espaciales para POI ---
+    // --- Datos Espaciales para POI
     public Vector3 position;
     public Vector3 normal;
 
-    // --- Datos Espaciales para Lazo (Flat Buffer) ---
+    // --- Datos Espaciales para Lazo (Flat Buffer)
     public int lassoStartIndex;
     public int lassoPointCount;
 
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
     {
         serializer.SerializeValue(ref markerID);
+        serializer.SerializeValue(ref markerNumber); // <--- AÑADIDO
         serializer.SerializeValue(ref type);
         serializer.SerializeValue(ref tag);
         serializer.SerializeValue(ref color);
@@ -34,5 +36,12 @@ public struct GeoMarkerData : INetworkSerializable, System.IEquatable<GeoMarkerD
         serializer.SerializeValue(ref lassoPointCount);
     }
 
-    public bool Equals(GeoMarkerData other) => markerID == other.markerID;
+    public bool Equals(GeoMarkerData other)
+    {
+        return markerID == other.markerID &&
+               markerNumber == other.markerNumber && // <--- AÑADIDO
+               tag == other.tag &&
+               color == other.color &&
+               isVisible == other.isVisible;
+    }
 }

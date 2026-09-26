@@ -1,106 +1,72 @@
 using UnityEngine;
-using System.Collections;
 
 public class SarGuidanceUI : MonoBehaviour
 {
     [Header("Referencias")]
     public TerrainLayerManager layerManager;
+    [Tooltip("El colisionador de este Canvas que bloquea el láser")]
+    public BoxCollider canvasCollider; 
 
     [Header("Paneles SAR")]
     public GameObject microExplanationPanel;
     public GameObject sarLegendPanel;
 
-    [Header("Duración")]
-    [Range(5f, 20f)]
-    public float microExplanationDuration = 10f;
-
     [Header("Persistencia")]
-    [Tooltip(
-        "Si está activo, la explicación se muestra " +
-        "solo una vez en esta instalación. " +
-        "Si está desactivado, vuelve a mostrarse " +
-        "en la primera activación SAR de cada ejecución.")]
+    [Tooltip("Si está activo, la explicación se muestra solo una vez en la vida.")]
     public bool recordarEntreSesiones = false;
 
-    private const string TutorialPlayerPrefsKey =
-        "SAR_MICRO_EXPLANATION_SEEN";
-
+    private const string TutorialPlayerPrefsKey = "SAR_MICRO_EXPLANATION_SEEN";
     private bool tutorialVisto = false;
-    private Coroutine tutorialCoroutine;
 
-    public bool IsMicroExplanationActive
-    {
-        get;
-        private set;
-    }
+    public bool IsMicroExplanationActive { get; private set; }
 
     // =========================================================
-    // AWAKE
+    // AWAKE & START
     // =========================================================
-
     private void Awake()
     {
+        // Autocompletar el colisionador si se nos olvida asignarlo
+        if (canvasCollider == null) canvasCollider = GetComponent<BoxCollider>();
+
         if (recordarEntreSesiones)
         {
-            tutorialVisto =
-                PlayerPrefs.GetInt(
-                    TutorialPlayerPrefsKey,
-                    0) == 1;
+            tutorialVisto = PlayerPrefs.GetInt(TutorialPlayerPrefsKey, 0) == 1;
         }
 
         OcultarTodo();
     }
 
-    // =========================================================
-    // START
-    // =========================================================
-
     private void Start()
     {
         if (layerManager == null)
         {
-            Debug.LogError(
-                "[SarGuidanceUI] " +
-                "TerrainLayerManager no está asignado.");
-
+            Debug.LogError("[SarGuidanceUI] TerrainLayerManager no está asignado.");
             return;
         }
 
-        layerManager.OnSarStateChangedLocal +=
-            OnSarStateChanged;
-
-        // Necesario para Late-Joining o cuando
-        // TerrainLayerManager ya se inicializó antes.
-        OnSarStateChanged(
-            layerManager.IsSarActive);
+        layerManager.OnSarStateChangedLocal += OnSarStateChanged;
+        OnSarStateChanged(layerManager.IsSarActive);
     }
 
     private void OnDestroy()
     {
         if (layerManager != null)
         {
-            layerManager.OnSarStateChangedLocal -=
-                OnSarStateChanged;
+            layerManager.OnSarStateChangedLocal -= OnSarStateChanged;
         }
-
-        DetenerTutorial();
     }
 
     // =========================================================
     // CAMBIO DE CAPA
     // =========================================================
-
-    private void OnSarStateChanged(
-        bool sarActive)
+    private void OnSarStateChanged(bool sarActive)
     {
         if (!sarActive)
         {
-            DetenerTutorial();
             OcultarTodo();
             return;
         }
 
-        // SAR está activa.
         if (!tutorialVisto)
         {
             MostrarMicroExplanation();
@@ -112,149 +78,67 @@ public class SarGuidanceUI : MonoBehaviour
     }
 
     // =========================================================
-    // MICROEXPLICACIÓN
+    // MICROEXPLICACIÓN Y BOTÓN CONTINUAR (PUNTO 4)
     // =========================================================
-
     private void MostrarMicroExplanation()
     {
-        DetenerTutorial();
+        IsMicroExplanationActive = true;
 
-        IsMicroExplanationActive =
-            true;
-
-        if (microExplanationPanel != null)
-        {
-            microExplanationPanel.SetActive(
-                true);
-        }
-
-        if (sarLegendPanel != null)
-        {
-            sarLegendPanel.SetActive(
-                false);
-        }
-
-        tutorialCoroutine =
-            StartCoroutine(
-                MicroExplanationRoutine());
+        if (canvasCollider != null) canvasCollider.enabled = true; // Activa el muro físico
+        if (microExplanationPanel != null) microExplanationPanel.SetActive(true);
+        if (sarLegendPanel != null) sarLegendPanel.SetActive(false);
     }
 
-    private IEnumerator MicroExplanationRoutine()
+    // MÉTODO QUE LLAMARÁ EL BOTÓN DE LA INTERFAZ
+    public void ContinuarTutorial()
     {
-        yield return new WaitForSeconds(
-            microExplanationDuration);
-
-        tutorialCoroutine =
-            null;
-
-        // Si alguien cambió nuevamente a Óptico
-        // antes de finalizar, no se registra
-        // como tutorial completado.
-        if (layerManager == null ||
-            !layerManager.IsSarActive)
+        if (layerManager == null || !layerManager.IsSarActive)
         {
-            IsMicroExplanationActive =
-                false;
-
-            yield break;
+            IsMicroExplanationActive = false;
+            return;
         }
 
-        tutorialVisto =
-            true;
+        tutorialVisto = true;
 
         if (recordarEntreSesiones)
         {
-            PlayerPrefs.SetInt(
-                TutorialPlayerPrefsKey,
-                1);
-
+            PlayerPrefs.SetInt(TutorialPlayerPrefsKey, 1);
             PlayerPrefs.Save();
-        }
-
-        IsMicroExplanationActive =
-            false;
-
-        if (microExplanationPanel != null)
-        {
-            microExplanationPanel.SetActive(
-                false);
         }
 
         MostrarLeyenda();
     }
 
     // =========================================================
-    // LEYENDA
+    // LEYENDA Y OCULTAMIENTO
     // =========================================================
-
     private void MostrarLeyenda()
     {
-        IsMicroExplanationActive =
-            false;
+        IsMicroExplanationActive = false;
 
-        if (microExplanationPanel != null)
-        {
-            microExplanationPanel.SetActive(
-                false);
-        }
-
-        if (sarLegendPanel != null)
-        {
-            sarLegendPanel.SetActive(
-                true);
-        }
+        if (canvasCollider != null) canvasCollider.enabled = true; // Activa el muro físico
+        if (microExplanationPanel != null) microExplanationPanel.SetActive(false);
+        if (sarLegendPanel != null) sarLegendPanel.SetActive(true);
     }
-
-    // =========================================================
-    // UTILIDADES
-    // =========================================================
 
     private void OcultarTodo()
     {
-        IsMicroExplanationActive =
-            false;
+        IsMicroExplanationActive = false;
 
-        if (microExplanationPanel != null)
-        {
-            microExplanationPanel.SetActive(
-                false);
-        }
-
-        if (sarLegendPanel != null)
-        {
-            sarLegendPanel.SetActive(
-                false);
-        }
+        if (canvasCollider != null) canvasCollider.enabled = false; // APAGA EL MURO FÍSICO
+        if (microExplanationPanel != null) microExplanationPanel.SetActive(false);
+        if (sarLegendPanel != null) sarLegendPanel.SetActive(false);
     }
 
-    private void DetenerTutorial()
-    {
-        if (tutorialCoroutine != null)
-        {
-            StopCoroutine(
-                tutorialCoroutine);
-
-            tutorialCoroutine =
-                null;
-        }
-
-        IsMicroExplanationActive =
-            false;
-    }
-
-    // Útil durante pruebas de usabilidad.
+    // =========================================================
+    // UTILIDAD
+    // =========================================================
     public void ResetTutorialLocal()
     {
-        DetenerTutorial();
+        tutorialVisto = false;
+        PlayerPrefs.DeleteKey(TutorialPlayerPrefsKey);
 
-        tutorialVisto =
-            false;
-
-        PlayerPrefs.DeleteKey(
-            TutorialPlayerPrefsKey);
-
-        if (layerManager != null &&
-            layerManager.IsSarActive)
+        if (layerManager != null && layerManager.IsSarActive)
         {
             MostrarMicroExplanation();
         }

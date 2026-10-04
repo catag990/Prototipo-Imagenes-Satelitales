@@ -205,14 +205,138 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // SELECCIÓN 3D Y CAMBIO DE TAG (PUNTO 2)
+    // SELECCIÓN 3D Y FEEDBACK VISUAL (PUNTO 1 Y 2)
     // =========================================================
     public void SeleccionarMarcador(ulong markerID)
     {
+        // Si tocamos el mismo que ya está seleccionado, no hacemos nada
+        if (marcadorSeleccionadoID == markerID) return;
+
+        // Deseleccionamos el anterior si había uno
+        if (marcadorSeleccionadoID != ulong.MaxValue)
+        {
+            AplicarResaltadoSeleccion(marcadorSeleccionadoID, false);
+        }
+
+        // Seleccionamos el nuevo
         marcadorSeleccionadoID = markerID;
+        AplicarResaltadoSeleccion(marcadorSeleccionadoID, true);
+
         Debug.Log($"[InteractionManager] Objeto 3D seleccionado con ID: {markerID}");
     }
 
+    public void DeseleccionarMarcador()
+    {
+        if (marcadorSeleccionadoID != ulong.MaxValue)
+        {
+            AplicarResaltadoSeleccion(marcadorSeleccionadoID, false);
+            marcadorSeleccionadoID = ulong.MaxValue;
+            Debug.Log("[InteractionManager] Marcador deseleccionado.");
+        }
+    }
+
+private void AplicarResaltadoSeleccion(ulong markerID, bool estaSeleccionado)
+    {
+        if (localVisuals.TryGetValue(markerID, out GameObject obj))
+        {
+            if (obj == null) return;
+
+            LineRenderer lr = obj.GetComponent<LineRenderer>();
+            if (lr != null)
+            {
+                // =========================================================
+                // ES UN LAZO: Generamos un borde de color por debajo
+                // =========================================================
+                Transform outlineObj = obj.transform.Find("LazoOutline");
+                
+                if (estaSeleccionado)
+                {
+                    if (outlineObj == null)
+                    {
+                        GameObject outline = new GameObject("LazoOutline");
+                        outline.transform.SetParent(obj.transform, false);
+                        LineRenderer outlineLr = outline.AddComponent<LineRenderer>();
+                        
+                        // Clonar los puntos exactos del lazo original
+                        outlineLr.positionCount = lr.positionCount;
+                        Vector3[] points = new Vector3[lr.positionCount];
+                        lr.GetPositions(points);
+                        outlineLr.SetPositions(points);
+                        outlineLr.useWorldSpace = lr.useWorldSpace;
+                        
+                        // Hacerlo más ancho para que sobresalga como un "Borde"
+                        outlineLr.startWidth = lr.startWidth * 1.8f;
+                        outlineLr.endWidth = lr.endWidth * 1.8f;
+                        
+                        // Aplicar el color de selección (Cyan)
+                        outlineLr.startColor = Color.cyan;
+                        outlineLr.endColor = Color.cyan;
+                        
+                        if (lassoTool != null && lassoTool.materialLinea != null)
+                        {
+                            outlineLr.material = new Material(lassoTool.materialLinea);
+                            outlineLr.material.color = Color.cyan;
+                        }
+                        
+                        // Moverlo milimétricamente hacia abajo para evitar que parpadee (Z-Fighting)
+                        outline.transform.localPosition = new Vector3(0, -0.005f, 0);
+                        // Asegurar que se renderice detrás
+                        outlineLr.sortingOrder = lr.sortingOrder - 1;
+                    }
+                    else
+                    {
+                        outlineObj.gameObject.SetActive(true);
+                    }
+                }
+                else
+                {
+                    if (outlineObj != null) outlineObj.gameObject.SetActive(false);
+                }
+            }
+            else
+            {
+                // =========================================================
+                // ES UN POI: Anillo de selección en la base
+                // ==========================================
+                Transform outlineObj = obj.transform.Find("Outline");
+                
+                if (estaSeleccionado)
+                {
+                    if (outlineObj == null)
+                    {
+                        // Creamos un disco de selección (tipo juego de estrategia)
+                        GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                        ring.name = "Outline";
+                        ring.transform.SetParent(obj.transform, false);
+                        
+                        // Destruimos su colisionador para que el láser no choque con él
+                        Destroy(ring.GetComponent<Collider>());
+                        
+                        // Lo aplanamos en la base de la bandera
+                        ring.transform.localPosition = new Vector3(0, 0.02f, 0); 
+                        ring.transform.localScale = new Vector3(0.5f, 0.01f, 0.5f); 
+                        
+                        MeshRenderer ringRenderer = ring.GetComponent<MeshRenderer>();
+                        ringRenderer.material.color = Color.cyan; // Color de selección
+                        
+                        outlineObj = ring.transform;
+                    }
+                    else
+                    {
+                        outlineObj.gameObject.SetActive(true);
+                    }
+                }
+                else
+                {
+                    if (outlineObj != null) outlineObj.gameObject.SetActive(false);
+                }
+            }
+        }
+    }
+
+    // =========================================================
+    // CAMBIO DE TAG
+    // =========================================================
     public void CambiarTagMarcadorSeleccionado()
     {
         if (marcadorSeleccionadoID == ulong.MaxValue)
@@ -377,7 +501,7 @@ public class InteractionManager : NetworkBehaviour
     }
 
     // =========================================================
-    // PROPAGACIÓN VISUAL Y COLISIONADORES (PUNTO 2)
+    // PROPAGACIÓN VISUAL Y COLISIONADORES
     // =========================================================
     [Rpc(SendTo.Everyone)]
     private void DibujarPOIRpc(GeoMarkerData data)

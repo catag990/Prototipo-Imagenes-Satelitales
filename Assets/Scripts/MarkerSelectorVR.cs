@@ -8,7 +8,7 @@ public class MarkerSelectorVR : MonoBehaviour
     public Transform origenRayoIzquierdo;
 
     [Header("Configuración de Input")]
-    [Tooltip("El InputAction del gatillo del controlador izquierdo")]
+    [Tooltip("DEBE SER ESTRICTAMENTE EL INPUT DE LA MANO IZQUIERDA (Ej: XRI LeftHand/Activate)")]
     public InputActionProperty triggerIzquierdoAction;
 
     [Header("Configuración del Rayo")]
@@ -20,11 +20,15 @@ public class MarkerSelectorVR : MonoBehaviour
 
     private void Update()
     {
-        float triggerVal = triggerIzquierdoAction.action != null ? triggerIzquierdoAction.action.ReadValue<float>() : 0f;
+        if (triggerIzquierdoAction.action == null) return;
+
+        float triggerVal = triggerIzquierdoAction.action.ReadValue<float>();
         bool isPressed = triggerVal > 0.5f;
 
         if (isPressed && !wasPressed)
         {
+            // Debugging para confirmar que no hay cruce de inputs
+            Debug.Log("[MarkerSelectorVR] Acción de Selección (Mano Izquierda) detectada.");
             DispararRayoSeleccion();
         }
         wasPressed = isPressed;
@@ -34,10 +38,9 @@ public class MarkerSelectorVR : MonoBehaviour
     {
         if (interactionManager == null || origenRayoIzquierdo == null) return;
 
-        // Disparar rayo desde la mano izquierda
+        // Disparamos el rayo desde la mano izquierda
         if (Physics.Raycast(origenRayoIzquierdo.position, origenRayoIzquierdo.forward, out RaycastHit hit, distanciaRayo, capaMarcadores))
         {
-            // Buscar el carnet de identidad en el objeto golpeado o en sus padres
             MarkerIdentity identity = hit.collider.GetComponent<MarkerIdentity>();
             if (identity == null)
             {
@@ -46,8 +49,19 @@ public class MarkerSelectorVR : MonoBehaviour
 
             if (identity != null)
             {
+                // Si tocamos un marcador, lo seleccionamos
                 interactionManager.SeleccionarMarcador(identity.markerID);
             }
+            else
+            {
+                // Si tocamos otra cosa en esta capa que no es un POI/Lazo, deseleccionamos
+                interactionManager.DeseleccionarMarcador();
+            }
+        }
+        else
+        {
+            // Si disparamos al aire o no tocamos nada válido, deseleccionamos
+            interactionManager.DeseleccionarMarcador();
         }
     }
 }

@@ -13,24 +13,22 @@ public class TerrainLayerManager : NetworkBehaviour
     public Texture2D texturaSAR;
 
     // =========================================================
-    // ESTADO GLOBAL DE CAPA
+    // ESTADO GLOBAL DE CAPA Y MEZCLA
     // =========================================================
     private NetworkVariable<bool> isSarActive = new NetworkVariable<bool>(false);
-
-    // =========================================================
-    // ESTADO LOCAL DE COMPARACIÓN
-    // =========================================================
-    private float localSarBlend = 0f;
     
-    // AÑADIDO (PUNTO 5): Memoria del nivel de mezcla preferido por el usuario
-    private float savedSarBlend = 1f;
+    // AÑADIDO: La mezcla ahora es una variable de red compartida
+    private NetworkVariable<float> netSarBlend = new NetworkVariable<float>(0f);
 
     private Material terrainMaterial;
     private bool materialPreparado = false;
     private bool warningShaderMostrado = false;
 
+    // Memoria en el servidor para el botón de "vistazo rápido"
+    private float previousBlendValue = 1f;
+
     // =========================================================
-    // EVENTOS LOCALES
+    // EVENTOS LOCALES (Para actualizar la UI)
     // =========================================================
     public event Action<bool> OnSarStateChangedLocal;
     public event Action<float> OnLocalBlendChanged;
@@ -39,10 +37,7 @@ public class TerrainLayerManager : NetworkBehaviour
     // PROPIEDADES PÚBLICAS
     // =========================================================
     public bool IsSarActive => isSarActive.Value;
-    public float LocalSarBlend => localSarBlend;
-    
-    // AÑADIDO (PUNTO 5): Exponer la memoria para que el Slider la lea
-    public float SavedSarBlend => savedSarBlend; 
+    public float CurrentSarBlend => netSarBlend.Value;
 
     public bool SupportsSmoothComparison
     {
@@ -66,13 +61,17 @@ public class TerrainLayerManager : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         isSarActive.OnValueChanged += OnLayerStateChanged;
+        netSarBlend.OnValueChanged += OnBlendStateChanged;
+
         PrepararMaterial();
         AplicarEstadoGlobalLocal(isSarActive.Value);
+        AplicarBlendVisual(netSarBlend.Value);
     }
 
     public override void OnNetworkDespawn()
     {
         isSarActive.OnValueChanged -= OnLayerStateChanged;
+        netSarBlend.OnValueChanged -= OnBlendStateChanged;
     }
 
     // =========================================================
@@ -94,7 +93,7 @@ public class TerrainLayerManager : NetworkBehaviour
     }
 
     // =========================================================
-    // CAMBIO GLOBAL
+    // CAMBIO GLOBAL DE CAPA (Botón Activar/Desactivar)
     // =========================================================
     public void ToggleLayer()
     {
@@ -104,7 +103,11 @@ public class TerrainLayerManager : NetworkBehaviour
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     private void ToggleLayerServerRpc()
     {
-        isSarActive.Value = !isSarActive.Value;
+        bool newState = !isSarActive.Value;
+        isSarActive.Value = newState;
+        
+        // Si encendemos SAR, vamos al 100% SAR. Si apagamos, al 0%.
+        netSarBlend.Value = newState ? 1f : 0f;
     }
 
     private void OnLayerStateChanged(bool oldState, bool newState)
@@ -115,79 +118,70 @@ public class TerrainLayerManager : NetworkBehaviour
     private void AplicarEstadoGlobalLocal(bool showSar)
     {
         PrepararMaterial();
-
-        if (showSar)
-        {
-            // MODIFICADO (PUNTO 5): Vuelve al valor que el usuario guardó, no a 1f
-            AplicarBlendLocal(savedSarBlend);
-        }
-        else
-        {
-            AplicarBlendLocal(0f);
-        }
-
         OnSarStateChangedLocal?.Invoke(showSar);
     }
 
     // =========================================================
-    // COMPARACIÓN LOCAL ÓPTICO / SAR
+    // CAMBIO GLOBAL DE MEZCLA (Slider y Vistazo Rápido)
     // =========================================================
-    public void SetLocalComparisonBlend(float sarBlend)
-    {
-        if (!IsSarActive)
-        {
-            AplicarBlendLocal(0f);
-            return;
-        }
-
-        float clampedValue = Mathf.Clamp01(sarBlend);
-        
-        // AÑADIDO (PUNTO 5): Guardar la decisión del usuario en memoria
-        savedSarBlend = clampedValue; 
-        
-        AplicarBlendLocal(clampedValue);
-    }
-
-    public void BeginLocalOpticalPreview()
+    public void SetSharedComparisonBlend(float sarBlend)
     {
         if (!IsSarActive) return;
-        AplicarBlendLocal(0f); // Vista temporal, NO sobrescribe savedSarBlend
+        SetBlendServerRpc(Mathf.Clamp01(sarBlend), true);
     }
 
-    public void EndLocalOpticalPreview()
+    public void BeginSharedOpticalPreview()
     {
-        ReturnToSarLocal();
+        if (!IsSarActive) return;
+        SetBlendServerRpc(0f, false);
     }
 
-    public void ReturnToSarLocal()
+    public void EndSharedOpticalPreview()
     {
-        if (!IsSarActive)
+        if (!IsSarActive) return;
+        RestoreBlendServerRpc();
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void SetBlendServerRpc(float newBlend, bool saveAsPrevious)
+    {
+        if (saveAsPrevious)
         {
-            AplicarBlendLocal(0f);
-            return;
+            previousBlendValue = newBlend;
         }
+        netSarBlend.Value = newBlend;
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RestoreBlendServerRpc()
+    {
+        netSarBlend.Value = previousBlendValue;
+    }
+
+    private void OnBlendStateChanged(float oldBlend, float newBlend)
+    {
+        AplicarBlendVisual(newBlend);
         
-        // MODIFICADO (PUNTO 5): Retorna a la memoria guardada en vez de 1f
-        AplicarBlendLocal(savedSarBlend); 
+        // Actualiza el Slider UI de todos los usuarios
+        OnLocalBlendChanged?.Invoke(newBlend); 
     }
 
     // =========================================================
     // APLICACIÓN VISUAL
     // =========================================================
-    private void AplicarBlendLocal(float sarBlend)
+    private void AplicarBlendVisual(float sarBlend)
     {
-        localSarBlend = Mathf.Clamp01(sarBlend);
         PrepararMaterial();
 
         if (terrainMaterial == null) return;
 
         if (SupportsSmoothComparison)
         {
-            terrainMaterial.SetFloat("_Blend", localSarBlend);
+            terrainMaterial.SetFloat("_Blend", sarBlend);
         }
         else
         {
-            Texture2D texturaAAplicar = localSarBlend >= 0.5f ? texturaSAR : texturaOptica;
+            Texture2D texturaAAplicar = sarBlend >= 0.5f ? texturaSAR : texturaOptica;
             terrainMaterial.mainTexture = texturaAAplicar;
 
             if (!warningShaderMostrado)
@@ -196,7 +190,5 @@ public class TerrainLayerManager : NetworkBehaviour
                 warningShaderMostrado = true;
             }
         }
-
-        OnLocalBlendChanged?.Invoke(localSarBlend);
     }
 }

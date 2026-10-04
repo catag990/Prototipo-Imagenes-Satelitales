@@ -8,123 +8,78 @@ public class SarComparisonInput : MonoBehaviour
     public SarGuidanceUI guidanceUI;
 
     [Header("Input")]
-    [Tooltip(
-        "Botón que se mantiene presionado " +
-        "para visualizar temporalmente Óptico.")]
+    [Tooltip("Botón que se mantiene presionado para visualizar temporalmente Óptico.")]
     public InputActionProperty compareOpticalAction;
 
-    private bool holdActive =
-        false;
-
-    private bool actionEnabledByThisScript =
-        false;
+    private bool holdActive = false;
+    private bool actionEnabledByThisScript = false;
 
     // =========================================================
     // ENABLE
     // =========================================================
-
     private void OnEnable()
     {
-        if (compareOpticalAction.action == null)
-        {
-            return;
-        }
+        if (compareOpticalAction.action == null) return;
 
-        compareOpticalAction.action.started +=
-            OnCompareStarted;
-
-        compareOpticalAction.action.canceled +=
-            OnCompareCanceled;
+        compareOpticalAction.action.started += OnCompareStarted;
+        compareOpticalAction.action.canceled += OnCompareCanceled;
 
         if (!compareOpticalAction.action.enabled)
         {
             compareOpticalAction.action.Enable();
-
-            actionEnabledByThisScript =
-                true;
+            actionEnabledByThisScript = true;
         }
     }
 
     private void OnDisable()
     {
-        if (compareOpticalAction.action == null)
-        {
-            return;
-        }
+        if (compareOpticalAction.action == null) return;
 
-        compareOpticalAction.action.started -=
-            OnCompareStarted;
-
-        compareOpticalAction.action.canceled -=
-            OnCompareCanceled;
+        compareOpticalAction.action.started -= OnCompareStarted;
+        compareOpticalAction.action.canceled -= OnCompareCanceled;
 
         if (actionEnabledByThisScript)
         {
             compareOpticalAction.action.Disable();
-
-            actionEnabledByThisScript =
-                false;
+            actionEnabledByThisScript = false;
         }
 
-        if (holdActive &&
-            layerManager != null)
+        if (holdActive && layerManager != null)
         {
-            layerManager.ReturnToSarLocal();
+            layerManager.EndSharedOpticalPreview();
         }
 
-        holdActive =
-            false;
+        holdActive = false;
     }
 
     // =========================================================
     // PRESIONAR
     // =========================================================
-
-    private void OnCompareStarted(
-        InputAction.CallbackContext context)
+    private void OnCompareStarted(InputAction.CallbackContext context)
     {
-        if (layerManager == null)
-        {
-            return;
-        }
+        if (layerManager == null || !layerManager.IsSarActive) return;
 
-        if (!layerManager.IsSarActive)
-        {
-            return;
-        }
+        if (guidanceUI != null && guidanceUI.IsMicroExplanationActive) return;
 
-        // Mantener la secuencia:
-        // primero explicación y después comparación.
-        if (guidanceUI != null &&
-            guidanceUI.IsMicroExplanationActive)
-        {
-            return;
-        }
-
-        holdActive =
-            true;
-
-        layerManager.BeginLocalOpticalPreview();
+        holdActive = true;
+        
+        // MODIFICADO: La vista óptica temporal ahora se transmite a todos
+        layerManager.BeginSharedOpticalPreview();
     }
 
     // =========================================================
     // SOLTAR
     // =========================================================
-
-    private void OnCompareCanceled(
-        InputAction.CallbackContext context)
+    private void OnCompareCanceled(InputAction.CallbackContext context)
     {
-        if (!holdActive)
-        {
-            return;
-        }
+        if (!holdActive) return;
 
-        holdActive =
-            false;
+        holdActive = false;
 
         if (layerManager != null)
         {
-            layerManager.EndLocalOpticalPreview();
+            // MODIFICADO: Devuelve a todos a la capa SAR guardada
+            layerManager.EndSharedOpticalPreview();
         }
     }
 }

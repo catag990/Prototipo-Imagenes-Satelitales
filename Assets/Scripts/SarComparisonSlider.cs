@@ -64,10 +64,10 @@ public class SarComparisonSlider :
     {
         if (!usuarioInteractuando) return;
         if (layerManager == null || !layerManager.IsSarActive) return;
-
         if (guidanceUI != null && guidanceUI.IsMicroExplanationActive) return;
 
-        layerManager.SetLocalComparisonBlend(value);
+        // MODIFICADO: Ahora envía el valor deslizado al servidor para todos
+        layerManager.SetSharedComparisonBlend(value);
     }
 
     // =========================================================
@@ -90,8 +90,8 @@ public class SarComparisonSlider :
 
         comparisonSlider.interactable = sarActive && layerManager != null && layerManager.SupportsSmoothComparison;
 
-        // MODIFICADO (PUNTO 5): Si SAR está activo, usa la memoria guardada en vez de forzar a 1f
-        float targetValue = (sarActive && layerManager != null) ? layerManager.SavedSarBlend : 0f;
+        // MODIFICADO: Lee el valor actual de la red para posicionarse
+        float targetValue = (sarActive && layerManager != null) ? layerManager.CurrentSarBlend : 0f;
         comparisonSlider.SetValueWithoutNotify(targetValue);
     }
 
@@ -122,16 +122,6 @@ public class SarComparisonSlider :
     {
         if (!usuarioInteractuando) return;
         usuarioInteractuando = false;
-
-        if (layerManager != null && layerManager.IsSarActive)
-        {
-            layerManager.ReturnToSarLocal();
-            
-            // MODIFICADO (PUNTO 5): Mantiene visualmente la elección del usuario
-            if (comparisonSlider != null)
-            {
-                comparisonSlider.SetValueWithoutNotify(layerManager.SavedSarBlend);
-            }
-        }
+        // Al soltar el slider, simplemente se queda en su valor actual de red.
     }
 }
